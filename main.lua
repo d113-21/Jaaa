@@ -1,100 +1,107 @@
--- Delta用: 演出強化版 Target Kill (flytumm)
+-- Delta用: 本家Blitz再現スクリプト (flytumm)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- --- 設定 ---
-local launchPower = 35000
-local liftHeight = 20
-getgenv().TargetPlayer = nil
+-- --- Blitz設定 ---
+local blitzRange = 100    -- 索敵範囲
+local hitCount = 20       -- 一撃あたりの連撃数
+local dashSpeed = 0.03    -- テレポートの間隔
+getgenv().BlitzActive = false
 
 -- 既存GUI削除
-if CoreGui:FindFirstChild("SkullKillGui") then CoreGui.SkullKillGui:Destroy() end
+if CoreGui:FindFirstChild("DeltaBlitz") then CoreGui.DeltaBlitz:Destroy() end
 
 -- --- GUI作成 ---
 local sg = Instance.new("ScreenGui", CoreGui)
-sg.Name = "SkullKillGui"
+sg.Name = "DeltaBlitz"
 
 local main = Instance.new("Frame", sg)
-main.Size = UDim2.new(0, 150, 0, 200)
-main.Position = UDim2.new(0, 50, 0.4, 0)
+main.Size = UDim2.new(0, 160, 0, 100)
+main.Position = UDim2.new(0, 50, 0.5, 0)
 main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-main.BackgroundTransparency = 0.2
-main.Draggable = true
+main.BorderSizePixel = 0
 main.Active = true
+main.Draggable = true
 
 local title = Instance.new("TextLabel", main)
 title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundColor3 = Color3.fromRGB(150, 0, 255)
-title.Text = "SKULL KILLER"
+title.BackgroundColor3 = Color3.fromRGB(0, 200, 255)
+title.Text = "DELTA BLITZ v2"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 
-local scroll = Instance.new("ScrollingFrame", main)
-scroll.Size = UDim2.new(1, 0, 1, -30)
-scroll.Position = UDim2.new(0, 0, 0, 30)
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.ScrollBarThickness = 3
+local btn = Instance.new("TextButton", main)
+btn.Size = UDim2.new(0.9, 0, 0, 50)
+btn.Position = UDim2.new(0.05, 0, 0.4, 0)
+btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+btn.Text = "START BLITZ"
+btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 
-local uiList = Instance.new("UIListLayout", scroll)
-
--- --- 演出：ドクロと黒いエフェクト ---
-local function playSkullEffect(pos)
-    local part = Instance.new("Part", workspace)
-    part.Anchored = true
-    part.CanCollide = false
-    part.Position = pos + Vector3.new(0, 5, 0)
-    part.Transparency = 1
+-- --- Blitzコアロジック ---
+local function doBlitz(target)
+    local char = target.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     
-    local attachment = Instance.new("Attachment", part)
-    local skull = Instance.new("BillboardGui", attachment)
-    skull.Size = UDim2.new(10, 0, 10, 0)
-    skull.AlwaysOnTop = true
-    
-    local img = Instance.new("ImageLabel", skull)
-    img.Size = UDim2.new(1, 0, 1, 0)
-    img.BackgroundTransparency = 1
-    img.Image = "rbxassetid://6031063035" -- ドクロのID
-    
-    task.delay(1, function() part:Destroy() end)
+    if root and myRoot then
+        for i = 1, hitCount do
+            if not getgenv().BlitzActive then break end
+            
+            -- 相手の前後左右に超高速ワープ
+            local offsets = {
+                Vector3.new(0, 0, 5), Vector3.new(0, 0, -5),
+                Vector3.new(5, 0, 0), Vector3.new(-5, 0, 0),
+                Vector3.new(3, 3, 3), Vector3.new(-3, 3, -3)
+            }
+            local offset = offsets[math.random(1, #offsets)]
+            
+            -- 相手を自分の位置に引き寄せて固定（掴み直し再現）
+            root.CFrame = myRoot.CFrame * CFrame.new(offset)
+            root.Velocity = Vector3.new(0, 0, 0)
+            
+            -- エフェクト（青い閃光）
+            local p = Instance.new("Part", workspace)
+            p.Anchored = true
+            p.CanCollide = false
+            p.Size = Vector3.new(0.5, 10, 0.5)
+            p.CFrame = root.CFrame
+            p.Color = Color3.fromRGB(0, 255, 255)
+            p.Material = Enum.Material.Neon
+            task.delay(0.05, function() p:Destroy() end)
+            
+            task.wait(dashSpeed)
+        end
+        -- 最後に吹き飛ばす
+        root.Velocity = Vector3.new(0, 500, 0)
+    end
 end
 
--- --- キル実行 ---
-local function killTarget(target)
-    if target and target.Character then
-        local root = target.Character:FindFirstChild("HumanoidRootPart")
-        if root then
-            playSkullEffect(root.Position) -- ドクロ出現
-            
-            -- 高速掴み直し演出（一瞬）
-            for i = 1, 10 do
-                root.CFrame = root.CFrame * CFrame.new(math.random(-5,5), 2, math.random(-5,5))
-                task.wait(0.01)
+-- --- トグル切り替え ---
+btn.MouseButton1Click:Connect(function()
+    getgenv().BlitzActive = not getgenv().BlitzActive
+    if getgenv().BlitzActive then
+        btn.Text = "BLITZING..."
+        btn.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+        
+        -- 最も近いプレイヤーを探してBlitz開始
+        while getgenv().BlitzActive do
+            local closest = nil
+            local dist = blitzRange
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local d = (LocalPlayer.Character.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+                    if d < dist then
+                        dist = d
+                        closest = p
+                    end
+                end
             end
-            
-            -- 爆破リリース
-            target.Character:BreakJoints()
-            root.Velocity = Vector3.new(0, launchPower, 0)
+            if closest then doBlitz(closest) end
+            task.wait(0.1)
         end
+    else
+        btn.Text = "START BLITZ"
+        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     end
-end
-
--- --- リスト更新 ---
-local function updateList()
-    for _, v in pairs(scroll:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local btn = Instance.new("TextButton", scroll)
-            btn.Size = UDim2.new(1, 0, 0, 30)
-            btn.Text = p.DisplayName
-            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            btn.MouseButton1Click:Connect(function() killTarget(p) end)
-        end
-    end
-    scroll.CanvasSize = UDim2.new(0, 0, 0, uiList.AbsoluteContentSize.Y)
-end
-
-updateList()
-Players.PlayerAdded:Connect(updateList)
-Players.PlayerRemoving:Connect(updateList)
+end)
