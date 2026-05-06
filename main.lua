@@ -1,114 +1,97 @@
--- Imosuke Hub Style: Black Hole & Blitz (flytumm)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
+-- --- 設定 ---
+getgenv().AutoLaunch = false
+getgenv().LaunchPower = 200000 -- 飛ばす威力（さらに強化）
+getgenv().GrabTime = 0.5        -- 何秒間掴んでから放出するか
+
 -- 古いGUIを削除
-if CoreGui:FindFirstChild("ImosukeHub") then CoreGui.ImosukeHub:Destroy() end
+if CoreGui:FindFirstChild("AutoLaunchHub") then CoreGui.AutoLaunchHub:Destroy() end
 
--- --- 変数設定 ---
-getgenv().BlackHoleActive = false
-getgenv().RotationSpeed = 5
-getgenv().Radius = 20
-
--- --- GUI作成 ---
+-- --- GUI作成 (imosuke hub風) ---
 local sg = Instance.new("ScreenGui", CoreGui)
-sg.Name = "ImosukeHub"
+sg.Name = "AutoLaunchHub"
 
 local main = Instance.new("Frame", sg)
-main.Size = UDim2.new(0, 400, 0, 280)
-main.Position = UDim2.new(0.5, -200, 0.5, -140)
-main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+main.Size = UDim2.new(0, 200, 0, 100)
+main.Position = UDim2.new(0.5, -100, 0.5, -50)
+main.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 main.BorderSizePixel = 0
 main.Active = true
 main.Draggable = true
 Instance.new("UICorner", main)
 
--- サイドバー
-local sidebar = Instance.new("Frame", main)
-sidebar.Size = UDim2.new(0, 100, 1, 0)
-sidebar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-sidebar.BorderSizePixel = 0
-Instance.new("UICorner", sidebar)
+local stroke = Instance.new("UIStroke", main)
+stroke.Color = Color3.fromRGB(255, 0, 0)
+stroke.Thickness = 2
 
-local title = Instance.new("TextLabel", sidebar)
-title.Size = UDim2.new(1, 0, 0, 40)
-title.Text = "imo hub"
+local title = Instance.new("TextLabel", main)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Text = "AUTO LAUNCHER"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextSize = 16
 title.Font = Enum.Font.GothamBold
 title.BackgroundTransparency = 1
 
--- メインコンテンツ
-local container = Instance.new("Frame", main)
-container.Size = UDim2.new(1, -110, 1, -10)
-container.Position = UDim2.new(0, 105, 0, 5)
-container.BackgroundTransparency = 1
+local toggleBtn = Instance.new("TextButton", main)
+toggleBtn.Size = UDim2.new(0.9, 0, 0, 45)
+toggleBtn.Position = UDim2.new(0.05, 0, 0.4, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+toggleBtn.Text = "自動放出: OFF"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", toggleBtn)
 
-local list = Instance.new("UIListLayout", container)
-list.Padding = UDim.new(0, 10)
+-- --- 自動放出ロジック ---
+local processing = {} -- 二重処理防止用
 
--- ブラックホールボタン
-local function createButton(txt, callback)
-    local btn = Instance.new("TextButton", container)
-    btn.Size = UDim2.new(1, 0, 0, 40)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    btn.Text = txt
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.Gotham
-    Instance.new("UICorner", btn)
-    btn.MouseButton1Click:Connect(callback)
-    return btn
-end
-
-local bhBtn = createButton("ブラックホール: OFF", function() end)
-
--- --- ブラックホールロジック (動画の再現) ---
-RunService.Heartbeat:Connect(function()
-    if getgenv().BlackHoleActive then
+RunService.RenderStepped:Connect(function()
+    if getgenv().AutoLaunch then
         local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not myRoot then return end
-        
-        local time = tick() * getgenv().RotationSpeed
-        local playerList = {}
-        
-        -- 自分以外の全プレイヤーを取得
+
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                table.insert(playerList, p.Character.HumanoidRootPart)
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and not processing[p] then
+                local tRoot = p.Character.HumanoidRootPart
+                local dist = (tRoot.Position - myRoot.Position).Magnitude
+                
+                -- 範囲内に入ったら自動処理開始
+                if dist < 25 then
+                    processing[p] = true
+                    task.spawn(function()
+                        -- 1. 瞬間的に掴んで固定
+                        local startTime = tick()
+                        while tick() - startTime < getgenv().GrabTime do
+                            tRoot.CFrame = myRoot.CFrame * CFrame.new(0, 2, -7)
+                            tRoot.Velocity = Vector3.new(0, 0, 0)
+                            task.wait()
+                        end
+                        
+                        -- 2. 自動放出！
+                        tRoot.Velocity = (myRoot.CFrame.LookVector + Vector3.new(0, 0.5, 0)).Unit * getgenv().LaunchPower
+                        
+                        -- 3. クールタイム（連続で掴み続けないように）
+                        task.wait(0.5)
+                        processing[p] = nil
+                    end)
+                end
             end
         end
-        
-        -- 円形に配置して回転させる
-        for i, root in ipairs(playerList) do
-            local angle = i * (math.pi * 2 / #playerList) + time
-            local x = math.cos(angle) * getgenv().Radius
-            local z = math.sin(angle) * getgenv().Radius
-            
-            -- 座標を強制書き換え（ブラックホール中心は自分の位置）
-            root.CFrame = myRoot.CFrame * CFrame.new(x, 2, z)
-            root.Velocity = Vector3.new(0, 0, 0) -- 逃げられないように速度をゼロに
-        end
     end
 end)
 
-bhBtn.MouseButton1Click:Connect(function()
-    getgenv().BlackHoleActive = not getgenv().BlackHoleActive
-    if getgenv().BlackHoleActive then
-        bhBtn.Text = "ブラックホール: 起動中"
-        bhBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 255)
+-- スイッチ
+toggleBtn.MouseButton1Click:Connect(function()
+    getgenv().AutoLaunch = not getgenv().AutoLaunch
+    if getgenv().AutoLaunch then
+        toggleBtn.Text = "自動放出: 稼働中"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+        stroke.Color = Color3.fromRGB(255, 255, 0)
     else
-        bhBtn.Text = "ブラックホール: OFF"
-        bhBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        toggleBtn.Text = "自動放出: OFF"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        stroke.Color = Color3.fromRGB(255, 0, 0)
     end
 end)
-
--- 閉じるボタン
-local close = Instance.new("TextButton", main)
-close.Size = UDim2.new(0, 20, 0, 20)
-close.Position = UDim2.new(1, -25, 0, 5)
-close.Text = "X"
-close.TextColor3 = Color3.fromRGB(255, 255, 255)
-close.BackgroundTransparency = 1
-close.MouseButton1Click:Connect(function() sg:Destroy() end)
