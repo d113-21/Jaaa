@@ -1,0 +1,474 @@
+-- ============================================================
+-- mochi 3タブ版（地面破壊 / Destroyサーバー / ESP）
+-- ============================================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "mochi", LoadingTitle = "おまんこ", LoadingSubtitle = "作成者もち:",
+    Theme = "Default", DisableRayfieldPrompts = false, DisableBuildWarnings = false,
+    ConfigurationSaving = {Enabled = false},
+    Discord = {Enabled = false, Invite = "noinvitelink", RememberJoins = true},
+    KeySystem = false,
+})
+
+-- ★ 3タブ作成
+local GroundTab  = Window:CreateTab("地面破壊", 16570630989)
+local DestroyTab = Window:CreateTab("Destroyサーバー", 16570630989)
+local EspTab     = Window:CreateTab("ESP", 16570630989)
+
+-- ============================================================
+-- サービス
+-- ============================================================
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+local function safeWait(p, n, t)
+    if not p then return nil end
+    local ok, r = pcall(function() return p:WaitForChild(n, t or 5) end)
+    if ok then return r end
+    return nil
+end
+
+local CE = safeWait(ReplicatedStorage, "CharacterEvents", 5)
+local PlayerEvents = safeWait(ReplicatedStorage, "PlayerEvents", 3)
+local GrabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+
+local SetNetworkOwner = nil
+local SpawnToyRemote = nil
+local DestroyToyRemote = nil
+for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+    if v:IsA("RemoteEvent") then
+        if v.Name == "SetNetworkOwner" then SetNetworkOwner = v
+        elseif v.Name == "DestroyToy" then DestroyToyRemote = v end
+    elseif v:IsA("RemoteFunction") and v.Name == "SpawnToyRemoteFunction" then
+        SpawnToyRemote = v
+    end
+end
+
+local stickyEvent = PlayerEvents and PlayerEvents:FindFirstChild("StickyPartEvent")
+
+local function notify(t, c, d) pcall(function() Rayfield:Notify({Title=t or "通知", Content=c or "", Duration=d or 4}) end) end
+
+local function getTargetContainer(plr)
+    if not workspace.PlotItems.PlayersInPlots:FindFirstChild(plr.Name) then
+        return workspace:FindFirstChild(plr.Name .. "SpawnedInToys")
+    end
+    for _, v in pairs(workspace.Plots:GetChildren()) do
+        local sign = v:FindFirstChild("PlotSign")
+        local owners = sign and sign:FindFirstChild("ThisPlotsOwners")
+        if owners then
+            for _, b in pairs(owners:GetChildren()) do
+                if b.Value == plr.Name then
+                    local folder = workspace.PlotItems:FindFirstChild(v.Name)
+                    if folder then return folder end
+                end
+            end
+        end
+    end
+    return workspace:FindFirstChild(plr.Name .. "SpawnedInToys")
+end
+
+local function spawnAndAttachShuriken(targetPart, container)
+    if not targetPart or not container then return nil end
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local canSpawn = LocalPlayer:FindFirstChild("CanSpawnToy")
+    if not canSpawn or not canSpawn.Value or not SpawnToyRemote then return nil end
+    local pre = {}
+    for _, c in pairs(container:GetChildren()) do
+        if c.Name == "NinjaShuriken" then table.insert(pre, c) end
+    end
+    local ok, sh = pcall(function()
+        SpawnToyRemote:InvokeServer("NinjaShuriken", hrp.CFrame * CFrame.new(0, 2, 8), Vector3.new(0,0,0))
+        local st = tick()
+        while tick() - st < 2 do
+            for _, c in pairs(container:GetChildren()) do
+                if c.Name == "NinjaShuriken" and not table.find(pre, c) then return c end
+            end
+            task.wait()
+        end
+        return nil
+    end)
+    if not ok or not sh then return nil end
+    local sp = sh:FindFirstChild("SoundPart") or sh:WaitForChild("SoundPart", 0.1)
+    if sp and SetNetworkOwner then pcall(function() SetNetworkOwner:FireServer(sp, sp.CFrame) end) end
+    if sh:FindFirstChild("StickyPart") and stickyEvent then
+        pcall(function()
+            stickyEvent:FireServer(sh.StickyPart, targetPart,
+                CFrame.new(9.99999996e+11, 9.99999996e+11, 9.99999996e+11, 1, 0, 0, 0, 1, 0, 0, 0, 1))
+        end)
+    end
+    return sh
+end
+
+local function destroyShuriken(sh)
+    if sh and sh.Parent and DestroyToyRemote then
+        pcall(function() DestroyToyRemote:FireServer(sh) end)
+    end
+end
+
+-- ============================================================
+-- タブ1：地面破壊
+-- ============================================================
+GroundTab:CreateSection("プロット破壊")
+local selectedPlots = {}
+GroundTab:CreateDropdown({
+    Name = "破壊するプロットを選択",
+    Options = {"プロット1","プロット2","プロット3","プロット4","プロット5"},
+    CurrentOption = {}, MultipleOptions = true, Flag = "PlotsDropdown",
+    Callback = function(options)
+        selectedPlots = {}
+        for _, opt in pairs(options) do table.insert(selectedPlots, opt:gsub("プロット", "Plot")) end
+    end,
+})
+GroundTab:CreateToggle({Name = "プロット破壊を実行", CurrentValue = false, Flag = "PlotBreakToggle",
+    Callback = function(v)
+        _G.PlotBreakEnabled = v
+        if v then task.spawn(function()
+            local ps = {}
+            while _G.PlotBreakEnabled do
+                local valid = {}
+                for _, name in pairs(selectedPlots) do
+                    local plot = workspace.Plots:FindFirstChild(name)
+                    local area = plot and plot:FindFirstChild("PlotArea")
+                    if area then table.insert(valid, area) end
+                end
+                local container = getTargetContainer(LocalPlayer)
+                if container and #valid > 0 then
+                    local alive = {}
+                    for _, sh in pairs(ps) do if sh and sh.Parent then table.insert(alive, sh) end end
+                    ps = alive
+                    if #ps < #valid then
+                        local ns = spawnAndAttachShuriken(valid[#ps + 1], container)
+                        if ns then table.insert(ps, ns) end
+                    end
+                end
+                task.wait(0.5)
+            end
+            for _, sh in pairs(ps) do destroyShuriken(sh) end
+        end) end
+    end})
+GroundTab:CreateSection("地面・パーツ破壊")
+GroundTab:CreateToggle({Name = "選んだやつをけす", CurrentValue = false, Flag = "AutoGroundBreak",
+    Callback = function(v)
+        _G.GroundBreakEnabled = v
+        if v then task.spawn(function()
+            local gs = {}
+            while _G.GroundBreakEnabled do
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local rp = RaycastParams.new()
+                    rp.FilterDescendantsInstances = {LocalPlayer.Character}
+                    rp.FilterType = Enum.RaycastFilterType.Exclude
+                    local res = workspace:Raycast(hrp.Position, Vector3.new(0, -10, 0), rp)
+                    local t = res and res.Instance
+                    if t and t:IsA("BasePart") and not t:IsA("Terrain") then
+                        local container = getTargetContainer(LocalPlayer)
+                        if container then
+                            local ns = spawnAndAttachShuriken(t, container)
+                            if ns then table.insert(gs, ns) end
+                        end
+                    end
+                end
+                task.wait(0.8)
+            end
+            for _, sh in pairs(gs) do destroyShuriken(sh) end
+        end) end
+    end})
+
+-- ============================================================
+-- タブ2：Destroyサーバー
+-- ============================================================
+DestroyTab:CreateSection("破壊設定")
+local lineCount = 50
+local selectedHeight = "Spawn"
+local lineLagEnabled = false
+
+DestroyTab:CreateDropdown({Name = "破壊の高さモード",
+    Options = {"Spawn (地上)","Heaven (天国)"}, CurrentOption = "Spawn (地上)",
+    Callback = function(v) selectedHeight = (v == "Heaven (天国)") and "Heaven" or "Spawn" end})
+DestroyTab:CreateSlider({Name = "ラインの本数", Range = {1,100}, Increment = 1, Suffix = "本",
+    CurrentValue = 50, Flag = "LineCountSlider", Callback = function(v) lineCount = v end})
+DestroyTab:CreateToggle({Name = "ラインラグを単独で実行", CurrentValue = false, Flag = "LineLagToggle",
+    Callback = function(v)
+        lineLagEnabled = v
+        if v then task.spawn(function()
+            while lineLagEnabled do
+                pcall(function()
+                    local cl = GrabEvents and GrabEvents:FindFirstChild("CreateGrabLine")
+                    if cl then
+                        local sl = workspace:FindFirstChild("SpawnLocation") or workspace:FindFirstChild("Spawn")
+                            or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"))
+                        if sl then
+                            for i = 1, lineCount do
+                                cl:FireServer(sl, CFrame.new(math.random(-1e9,1e9), 0, math.random(-1e9,1e9)))
+                            end
+                        end
+                    end
+                end)
+                task.wait(0.01)
+            end
+        end) end
+    end})
+DestroyTab:CreateButton({Name = "Destroy Server", Callback = function()
+    task.spawn(function()
+        pcall(function()
+            local h = (selectedHeight == "Heaven") and 1e9 or 35
+            lineLagEnabled = true
+            task.spawn(function()
+                while lineLagEnabled do
+                    pcall(function()
+                        local cl = GrabEvents and GrabEvents:FindFirstChild("CreateGrabLine")
+                        if cl then
+                            local sl = workspace:FindFirstChild("SpawnLocation") or workspace:FindFirstChild("Spawn")
+                                or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"))
+                            if sl then
+                                for i = 1, lineCount do
+                                    cl:FireServer(sl, CFrame.new(math.random(-1e9,1e9), 0, math.random(-1e9,1e9)))
+                                end
+                            end
+                        end
+                    end)
+                    task.wait(0.01)
+                end
+            end)
+            task.wait(1)
+            local ps = {}
+            for _, plr in pairs(Players:GetPlayers()) do if plr ~= LocalPlayer then table.insert(ps, plr) end end
+            if #ps == 0 then lineLagEnabled = false; notify("Destroy", "対象なし", 3); return end
+            local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not myHrp then lineLagEnabled = false; return end
+            local pd = {}
+            for _, plr in ipairs(ps) do
+                local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then table.insert(pd, {player = plr, hrp = hrp}) end
+            end
+            for _, d in ipairs(pd) do
+                pcall(function() myHrp.CFrame = d.hrp.CFrame * CFrame.new(0, 5, 5); myHrp.AssemblyLinearVelocity = Vector3.zero end)
+                task.wait(0.2)
+                if GrabEvents then
+                    local so = GrabEvents:FindFirstChild("SetNetworkOwner")
+                    if so then
+                        for i = 1, 2 do
+                            pcall(function() so:FireServer(d.hrp, d.hrp.CFrame) end)
+                            pcall(function() so:FireServer(d.hrp) end)
+                            task.wait(0.05)
+                        end
+                    end
+                end
+                task.wait()
+            end
+            local radius = 50
+            local step = (math.pi * 2) / #pd
+            for i, d in ipairs(pd) do
+                local a = (i - 1) * step
+                local x, z = math.cos(a) * radius, math.sin(a) * radius
+                pcall(function()
+                    d.hrp.CFrame = CFrame.new(x, h, z)
+                    d.hrp.AssemblyLinearVelocity = Vector3.zero
+                end)
+                local bp = Instance.new("BodyPosition")
+                bp.MaxForce = Vector3.new(1e19, 1e19, 1e19)
+                bp.P = 1e19
+                bp.Position = Vector3.new(x, h, z)
+                bp.Parent = d.hrp
+                task.delay(2, function() pcall(function() bp:Destroy() end) end)
+                task.wait()
+            end
+            for _ = 1, 8 do
+                for _, d in ipairs(pd) do
+                    pcall(function()
+                        local cl = GrabEvents:FindFirstChild("CreateGrabLine")
+                        local dl = GrabEvents:FindFirstChild("DestroyGrabLine")
+                        if cl and dl then
+                            cl:FireServer(d.hrp, CFrame.new(0, 1e9, 0))
+                            task.wait()
+                            dl:FireServer(d.hrp)
+                        end
+                    end)
+                end
+                task.wait(0.3)
+            end
+            notify("Destroy", "完了！", 2)
+        end)
+    end)
+end})
+DestroyTab:CreateButton({Name = "Stop Lag", Callback = function() lineLagEnabled = false; notify("Lag", "停止", 2) end})
+
+-- ============================================================
+-- タブ3：ESP
+-- ============================================================
+EspTab:CreateSection("Corner ESP 設定")
+local ESPConfig = {Enabled = false, MaxDistance = 2000, CornerLength = 0.25, Thickness = 8, Roundness = 8,
+    BoxSizeMult = 1.60, TopOffset = 1.5, BottomOffset = 4.5,
+    AutoSizeMin = 0.50, AutoSizeMax = 2.20, AutoSizeSpeed = 2.5,
+    RotationSpeed = 4.0, RotationAngle = 0, RainbowSpeed = 0.4, RainbowHue = 0,
+    AdaptiveThickness = true, ShowName = true,
+    NameColor = Color3.fromRGB(255, 255, 255), NameSize = 16, NameWorldOffsetY = 2.0, UseRainbow = true}
+
+EspTab:CreateToggle({Name = "Corner ESPを有効化", CurrentValue = false, Flag = "CornerEspToggle",
+    Callback = function(v) ESPConfig.Enabled = v end})
+EspTab:CreateToggle({Name = "レインボーカラー", CurrentValue = true, Flag = "RainbowToggle",
+    Callback = function(v) ESPConfig.UseRainbow = v end})
+EspTab:CreateColorPicker({Name = "ESP/名前の色", Color = Color3.fromRGB(255,255,255), Flag = "EspColorPicker",
+    Callback = function(c) ESPConfig.NameColor = c end})
+EspTab:CreateSlider({Name = "名前のサイズ", Range = {8,32}, Increment = 1, Suffix = "px", CurrentValue = 16, Flag = "NameSizeSlider",
+    Callback = function(v) ESPConfig.NameSize = v end})
+EspTab:CreateToggle({Name = "名前を表示", CurrentValue = true, Flag = "ShowNameToggle",
+    Callback = function(v) ESPConfig.ShowName = v end})
+EspTab:CreateSlider({Name = "最大表示距離", Range = {100,5000}, Increment = 100, Suffix = "m", CurrentValue = 2000, Flag = "MaxDistanceSlider",
+    Callback = function(v) ESPConfig.MaxDistance = v end})
+EspTab:CreateSlider({Name = "回転速度", Range = {0,10}, Increment = 0.5, CurrentValue = 4.0, Flag = "RotationSpeedSlider",
+    Callback = function(v) ESPConfig.RotationSpeed = v end})
+EspTab:CreateSlider({Name = "角の長さ", Range = {0.05,0.5}, Increment = 0.05, CurrentValue = 0.25, Flag = "CornerLengthSlider",
+    Callback = function(v) ESPConfig.CornerLength = v end})
+EspTab:CreateSlider({Name = "枠の太さ", Range = {1,20}, Increment = 1, Suffix = "px", CurrentValue = 8, Flag = "ThicknessSlider",
+    Callback = function(v) ESPConfig.Thickness = v end})
+EspTab:CreateButton({Name = "ESPをリセット", Callback = function() ESPConfig.BoxSizeMult = 1.60; ESPConfig.RotationAngle = 0 end})
+
+-- ============================================================
+-- ESP描画処理
+-- ============================================================
+local ESPGui = Instance.new("ScreenGui")
+ESPGui.Name = "CornerESP_UI"
+ESPGui.ResetOnSpawn = false
+ESPGui.IgnoreGuiInset = true
+ESPGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local ESPContainer = Instance.new("Frame")
+ESPContainer.Size = UDim2.new(1, 0, 1, 0)
+ESPContainer.BackgroundTransparency = 1
+ESPContainer.Parent = ESPGui
+local PlayerUI = {}
+
+local function createBar(parent)
+    local b = Instance.new("Frame")
+    b.BackgroundColor3 = Color3.fromRGB(0, 255, 0); b.BorderSizePixel = 0
+    b.AnchorPoint = Vector2.new(0.5, 0.5); b.Visible = false; b.Parent = parent
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 8); c.Parent = b
+    return b
+end
+
+local function createUIForPlayer(player)
+    local h = Instance.new("Frame")
+    h.Name = "ESP_" .. player.Name; h.BackgroundTransparency = 1
+    h.Size = UDim2.new(1, 0, 1, 0); h.Parent = ESPContainer
+    local bars = {}
+    for i = 1, 8 do bars[i] = createBar(h) end
+    local nl = Instance.new("TextLabel")
+    nl.BackgroundTransparency = 1
+    nl.TextColor3 = ESPConfig.NameColor; nl.TextStrokeTransparency = 0
+    nl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0); nl.Font = Enum.Font.SourceSansBold
+    nl.TextSize = ESPConfig.NameSize; nl.AnchorPoint = Vector2.new(0.5, 0.5)
+    nl.Rotation = 0; nl.Text = player.Name; nl.Visible = false; nl.Parent = h
+    return {holder = h, bars = bars, nameLabel = nl}
+end
+
+local function hideAll(d)
+    if not d then return end
+    for _, b in ipairs(d.bars) do b.Visible = false end
+    if d.nameLabel then d.nameLabel.Visible = false end
+end
+
+local function getThick(side)
+    if not ESPConfig.AdaptiveThickness then return ESPConfig.Thickness end
+    local f = math.clamp(side / 100, 0.4, 1.0)
+    return math.max(2, ESPConfig.Thickness * f)
+end
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        if not ESPConfig.Enabled then
+            for _, d in pairs(PlayerUI) do hideAll(d) end
+            return
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local head = char and char:FindFirstChild("Head")
+                local hum = char and char:FindFirstChild("Humanoid")
+                if hrp and head and hum and hum.Health > 0 then
+                    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if myRoot then
+                        local dist = (myRoot.Position - hrp.Position).Magnitude
+                        if dist <= ESPConfig.MaxDistance then
+                            if not PlayerUI[player] then PlayerUI[player] = createUIForPlayer(player) end
+                            local d = PlayerUI[player]
+                            local tw = head.Position + Vector3.new(0, ESPConfig.TopOffset, 0)
+                            local bw = hrp.Position - Vector3.new(0, ESPConfig.BottomOffset, 0)
+                            local top, tOn = Camera:WorldToViewportPoint(tw)
+                            local bot, bOn = Camera:WorldToViewportPoint(bw)
+                            if tOn and bOn then
+                                local side = math.abs(bot.Y - top.Y) * ESPConfig.BoxSizeMult
+                                local cx, cy = (top.X + bot.X) / 2, (top.Y + bot.Y) / 2
+                                local bx, by = cx - side / 2, cy - side / 2
+                                local arm = side * ESPConfig.CornerLength
+                                local th = getThick(side)
+                                local color = ESPConfig.UseRainbow and Color3.fromHSV(ESPConfig.RainbowHue, 1, 1) or ESPConfig.NameColor
+                                local rot = ESPConfig.RotationAngle
+                                local cr, sr = math.cos(rot), math.sin(rot)
+                                local function rp(px, py)
+                                    local dx, dy = px - cx, py - cy
+                                    return cx + (dx * cr - dy * sr), cy + (dx * sr + dy * cr)
+                                end
+                                local function setBar(bar, x, y, sx, sy)
+                                    bar.Size = UDim2.new(0, sx, 0, sy)
+                                    bar.Position = UDim2.new(0, x, 0, y)
+                                    bar.Rotation = math.deg(rot)
+                                    bar.BackgroundColor3 = color
+                                    bar.Visible = true
+                                    local uc = bar:FindFirstChildOfClass("UICorner")
+                                    if uc then uc.CornerRadius = UDim.new(0, math.min(th / 2, ESPConfig.Roundness)) end
+                                end
+                                local x1,y1 = rp(bx + arm/2, by); setBar(d.bars[1], x1, y1, arm, th)
+                                local x2,y2 = rp(bx, by + arm/2); setBar(d.bars[2], x2, y2, th, arm)
+                                local x3,y3 = rp(bx + side - arm/2, by); setBar(d.bars[3], x3, y3, arm, th)
+                                local x4,y4 = rp(bx + side, by + arm/2); setBar(d.bars[4], x4, y4, th, arm)
+                                local x5,y5 = rp(bx + arm/2, by + side); setBar(d.bars[5], x5, y5, arm, th)
+                                local x6,y6 = rp(bx, by + side - arm/2); setBar(d.bars[6], x6, y6, th, arm)
+                                local x7,y7 = rp(bx + side - arm/2, by + side); setBar(d.bars[7], x7, y7, arm, th)
+                                local x8,y8 = rp(bx + side, by + side - arm/2); setBar(d.bars[8], x8, y8, th, arm)
+                                if ESPConfig.ShowName then
+                                    local nw = head.Position + Vector3.new(0, ESPConfig.TopOffset + ESPConfig.NameWorldOffsetY, 0)
+                                    local ns, nOn = Camera:WorldToViewportPoint(nw)
+                                    if nOn then
+                                        d.nameLabel.Position = UDim2.new(0, ns.X, 0, ns.Y)
+                                        d.nameLabel.Text = player.Name
+                                        d.nameLabel.TextColor3 = ESPConfig.NameColor
+                                        d.nameLabel.Rotation = 0
+                                        d.nameLabel.Visible = true
+                                    else d.nameLabel.Visible = false end
+                                else d.nameLabel.Visible = false end
+                            else hideAll(d) end
+                        else hideAll(PlayerUI[player]) end
+                    end
+                else hideAll(PlayerUI[player]) end
+            end
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if PlayerUI[p] then PlayerUI[p].holder:Destroy(); PlayerUI[p] = nil end
+end)
+
+task.spawn(function()
+    local dir = 1
+    while true do
+        task.wait(0.03)
+        if ESPConfig.Enabled then
+            ESPConfig.BoxSizeMult = ESPConfig.BoxSizeMult + (ESPConfig.AutoSizeSpeed * dir * 0.03)
+            if ESPConfig.BoxSizeMult >= ESPConfig.AutoSizeMax then ESPConfig.BoxSizeMult = ESPConfig.AutoSizeMax; dir = -1
+            elseif ESPConfig.BoxSizeMult <= ESPConfig.AutoSizeMin then ESPConfig.BoxSizeMult = ESPConfig.AutoSizeMin; dir = 1 end
+            ESPConfig.RotationAngle = ESPConfig.RotationAngle + (ESPConfig.RotationSpeed * 0.03)
+            if ESPConfig.RotationAngle > math.pi * 2 then ESPConfig.RotationAngle = ESPConfig.RotationAngle - math.pi * 2 end
+            ESPConfig.RainbowHue = (ESPConfig.RainbowHue + ESPConfig.RainbowSpeed * 0.03) % 1
+        end
+    end
+end)
+
+notify("mochi", "3タブ版 読み込み完了", 3)
