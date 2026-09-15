@@ -1,10 +1,10 @@
 -- ============================================================
--- mochi 3タブ版（地面破壊 / Destroyサーバー / ESP）
+-- Dream 3タブ版（地面破壊 / Destroyサーバー / ESP）
 -- ============================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "mochi", LoadingTitle = "おまんこ", LoadingSubtitle = "作成者もち:",
+    Name = "Tmmu!!", LoadingTitle = "Dream skid", LoadingSubtitle = "by Dream",
     Theme = "Default", DisableRayfieldPrompts = false, DisableBuildWarnings = false,
     ConfigurationSaving = {Enabled = false},
     Discord = {Enabled = false, Invite = "noinvitelink", RememberJoins = true},
@@ -187,12 +187,21 @@ DestroyTab:CreateSection("破壊設定")
 local lineCount = 50
 local selectedHeight = "Spawn"
 local lineLagEnabled = false
+local ownerSpamCount = 6
+local ownerSpamInterval = 0.01
+local radius = 50  -- ★ 配置半径
 
 DestroyTab:CreateDropdown({Name = "破壊の高さモード",
     Options = {"Spawn (地上)","Heaven (天国)"}, CurrentOption = "Spawn (地上)",
     Callback = function(v) selectedHeight = (v == "Heaven (天国)") and "Heaven" or "Spawn" end})
 DestroyTab:CreateSlider({Name = "ラインの本数", Range = {1,100}, Increment = 1, Suffix = "本",
     CurrentValue = 50, Flag = "LineCountSlider", Callback = function(v) lineCount = v end})
+DestroyTab:CreateSlider({Name = "配置半径", Range = {5,300}, Increment = 5, Suffix = " studs",
+    CurrentValue = 50, Flag = "RadiusSlider", Callback = function(v) radius = v end})
+DestroyTab:CreateSlider({Name = "オーナースパム回数", Range = {1,20}, Increment = 1, Suffix = " 回",
+    CurrentValue = 6, Flag = "OwnerSpamSlider", Callback = function(v) ownerSpamCount = v end})
+DestroyTab:CreateSlider({Name = "オーナースパム間隔", Range = {0.01,1}, Increment = 0.01, Suffix = " 秒",
+    CurrentValue = 0.01, Flag = "OwnerSpamIntervalSlider", Callback = function(v) ownerSpamInterval = v end})
 DestroyTab:CreateToggle({Name = "ラインラグを単独で実行", CurrentValue = false, Flag = "LineLagToggle",
     Callback = function(v)
         lineLagEnabled = v
@@ -253,16 +262,16 @@ DestroyTab:CreateButton({Name = "Destroy Server", Callback = function()
                 if GrabEvents then
                     local so = GrabEvents:FindFirstChild("SetNetworkOwner")
                     if so then
-                        for i = 1, 2 do
+                        for i = 1, ownerSpamCount do
                             pcall(function() so:FireServer(d.hrp, d.hrp.CFrame) end)
                             pcall(function() so:FireServer(d.hrp) end)
-                            task.wait(0.05)
+                            task.wait(ownerSpamInterval)
                         end
                     end
                 end
                 task.wait()
             end
-            local radius = 50
+            -- ★ radius 変数を使用
             local step = (math.pi * 2) / #pd
             for i, d in ipairs(pd) do
                 local a = (i - 1) * step
@@ -471,4 +480,4 @@ task.spawn(function()
     end
 end)
 
-notify("mochi", "3タブ版 読み込み完了", 3)
+notify("Dream", "Dream skidロードgood!", 3)
