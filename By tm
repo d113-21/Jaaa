@@ -4,199 +4,333 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
 -- ============================================================
--- Fluent.Pro Library + FakeLibrary互換ラッパー
--- XOCU Premium を Fluent.Pro で動かすためのアダプタ
+-- XOCU Premium → Fluent.Pro 自動アダプタ
+-- 元の FakeLibrary API を Fluent.Pro に変換するラッパー
 -- ============================================================
-local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dcus-official/UI/refs/heads/main/Fluent.Pro/Library.lua"))()
+local FLUENT_URL = "https://raw.githubusercontent.com/dcus-official/UI/refs/heads/main/Fluent.Pro/Library.lua"
 
+local Fluent
+do
+    local src = game:HttpGet(FLUENT_URL)
+    local chunk, err = loadstring(src)
+    if not chunk then
+        error("[XOCU] Fluent.Pro の loadstring に失敗: " .. tostring(err))
+    end
+    local result = chunk()
+    if type(result) == "function" then
+        result = result()
+    end
+    Fluent = result
+end
+
+if type(Fluent) ~= "table" then
+    error("[XOCU] Fluent.Pro がテーブルを返しませんでした: " .. typeof(Fluent))
+end
+
+-- メソッド自動判別
+local function pick(obj, names)
+    for _, n in ipairs(names) do
+        if type(obj[n]) == "function" then return obj[n], n end
+    end
+    return nil, nil
+end
+
+-- ============================================================
+-- 状態ストア
+-- ============================================================
+local Items = {}
 local Library = {}
-Library.Items = {}
-Library.Flags = {}
-Library._window = nil
+Library.Items = Items
+Library.Flags = Items  -- 同じ参照（元コードが両方参照するため）
 
+-- ============================================================
+-- 各UI要素をラップして互換メソッドを付与
+-- ============================================================
+local function wrapElem(elem)
+    if not elem then return nil end
+    return setmetatable({}, {
+        __index = function(_, key)
+            if key == "SetValue" or key == "Set" then
+                return function(_, v)
+                    if type(elem.SetValue) == "function" then
+                        pcall(elem.SetValue, elem, v)
+                    elseif type(elem.Set) == "function" then
+                        pcall(elem.Set, elem, v)
+                    end
+                end
+            elseif key == "GetValue" then
+                return function(_)
+                    if type(elem.GetValue) == "function" then
+                        return elem.GetValue(elem)
+                    end
+                end
+            elseif key == "SetItems" or key == "Refresh" then
+                return function(_, list, keep)
+                    if type(elem.SetValues) == "function" then
+                        pcall(elem.SetValues, elem, list)
+                    elseif type(elem.Refresh) == "function" then
+                        pcall(elem.Refresh, elem, list, keep ~= false)
+                    end
+                end
+            end
+            local v = elem[key]
+            if type(v) == "function" then
+                return function(_, ...) return v(elem, ...) end
+            end
+            return v
+        end,
+    })
+end
+
+-- ============================================================
+-- Window 作成
+-- ============================================================
 function Library:CreateWindow(opts)
     opts = opts or {}
-    local window = Fluent:CreateWindow({
+    local createFn = pick(Fluent, {"CreateWindow", "Window", "new", "Init"})
+    if not createFn then
+        error("[XOCU] Fluent.Pro に CreateWindow 系メソッドがありません")
+    end
+
+    local win = createFn(Fluent, {
         Title = opts.Title or "XOCU",
-        SubTitle = opts.LoadingSubtitle or "by mochi",
+        SubTitle = "by mochi",
         TabWidth = 160,
         Size = UDim2.fromOffset(620, 480),
         Acrylic = true,
         Theme = "Dark",
         MinimizeKey = opts.ToggleKey or Enum.KeyCode.RightShift,
     })
-    Library._window = window
+    if not win then
+        error("[XOCU] CreateWindow が nil を返しました")
+    end
 
-    local windowWrapper = {}
+    local addTabFn = pick(win, {"AddTab", "CreateTab", "Tab", "NewTab"})
+    if not addTabFn then
+        error("[XOCU] Fluent.Pro Window に AddTab 系メソッドがありません")
+    end
 
-    function windowWrapper:CreateTab(name, selected, imageId)
-        local tab = window:AddTab({ Title = name or "Tab", Icon = "" })
+    local wrapper = {}
+
+    function wrapper:CreateTab(name, selected, imageId)
+        name = name or "Tab"
+        local tab = nil
+        local ok1, r1 = pcall(addTabFn, win, { Title = name, Icon = "" })
+        if ok1 and r1 then tab = r1 end
+        if not tab then
+            local ok2, r2 = pcall(addTabFn, win, name)
+            if ok2 and r2 then tab = r2 end
+        end
+        if not tab then
+            error("[XOCU] AddTab が失敗: " .. tostring(name))
+        end
+
+        local addSectionFn  = pick(tab, {"AddSection", "Section", "CreateSection"})
+        local addToggleFn   = pick(tab, {"AddToggle", "Toggle", "CreateToggle"})
+        local addSliderFn   = pick(tab, {"AddSlider", "Slider", "CreateSlider"})
+        local addDropdownFn = pick(tab, {"AddDropdown", "Dropdown", "CreateDropdown"})
+        local addButtonFn   = pick(tab, {"AddButton", "Button", "CreateButton"})
+        local addInputFn    = pick(tab, {"AddInput", "Input", "CreateInput"})
+        local addKeybindFn  = pick(tab, {"AddKeybind", "Keybind", "CreateKeybind"})
+        local addColorFn    = pick(tab, {"AddColorPicker", "ColorPicker", "CreateColorPicker"})
+
         local tabWrapper = {}
+
+        -- 複数パターンの引数で要素を生成
+        local function tryAdd(fn, flag, opts, name)
+            if not fn then return nil end
+            local elem = nil
+            if flag then
+                local ok, r = pcall(fn, tab, flag, opts)
+                if ok and r then elem = r end
+            end
+            if not elem then
+                local ok, r = pcall(fn, tab, opts)
+                if ok and r then elem = r end
+            end
+            if not elem and name then
+                local ok, r = pcall(fn, tab, name, opts)
+                if ok and r then elem = r end
+            end
+            return elem
+        end
 
         function tabWrapper:CreateBlock(o)
             o = o or {}
-            tab:AddSection(o.Name or "Section")
-            local blockWrapper = {}
-
-            function blockWrapper:CreateToggle(opt)
-                opt = opt or {}
-                local defaultVal = opt.Default or false
-                local newToggle = tab:AddToggle({
-                    Title = opt.Name or "Toggle",
-                    Description = opt.Tooltip,
-                    Default = defaultVal,
-                    Callback = function(value)
-                        if opt.Flag then Library.Flags[opt.Flag] = value end
-                        if opt.Callback then
-                            local ok, err = pcall(opt.Callback, value)
-                            if not ok then warn("[XOCU][Toggle] " .. tostring(err)) end
-                        end
-                    end,
-                })
-                if opt.Flag then Library.Items[opt.Flag] = newToggle end
-                if opt.Flag and SetToggleState then SetToggleState(opt.Flag, defaultVal) end
-                return newToggle
+            if addSectionFn then
+                pcall(addSectionFn, tab, o.Name or "Section")
             end
 
-            function blockWrapper:CreateSlider(opt)
+            local block = {}
+
+            function block:CreateToggle(opt)
                 opt = opt or {}
+                local flag = opt.Flag
+                local default = opt.Default or false
+                local cb = function(v)
+                    if flag then Items[flag] = v end
+                    if opt.Callback then pcall(opt.Callback, v) end
+                end
+                local elem = tryAdd(addToggleFn, flag, {
+                    Title = opt.Name or "Toggle",
+                    Description = opt.Tooltip,
+                    Default = default,
+                    Callback = cb,
+                }, opt.Name)
+                local w = wrapElem(elem)
+                if w and flag then Items[flag] = w end
+                return w
+            end
+
+            function block:CreateSlider(opt)
+                opt = opt or {}
+                local flag = opt.Flag
                 local range = opt.Range or { opt.Min or 0, opt.Max or 100 }
-                local defaultVal = opt.Default or opt.CurrentValue or range[1]
-                local newSlider = tab:AddSlider({
+                local default = opt.Default or opt.CurrentValue or range[1]
+                local cb = function(v)
+                    if flag then Items[flag] = v end
+                    if opt.Callback then pcall(opt.Callback, v) end
+                end
+                local elem = tryAdd(addSliderFn, flag, {
                     Title = opt.Name or "Slider",
-                    Default = defaultVal,
+                    Default = default,
                     Min = range[1],
                     Max = range[2],
                     Rounding = opt.Increment or 0,
-                    Callback = function(value)
-                        if opt.Flag then Library.Flags[opt.Flag] = value end
-                        if opt.Callback then
-                            local ok, err = pcall(opt.Callback, value)
-                            if not ok then warn("[XOCU][Slider] " .. tostring(err)) end
-                        end
-                    end,
-                })
-                if opt.Flag then Library.Items[opt.Flag] = newSlider end
-                return newSlider
+                    Callback = cb,
+                }, opt.Name)
+                local w = wrapElem(elem)
+                if w and flag then Items[flag] = w end
+                return w
             end
 
-            function blockWrapper:CreateDropdown(opt)
+            function block:CreateDropdown(opt)
                 opt = opt or {}
+                local flag = opt.Flag
                 local items = opt.Items or opt.Options or {}
-                local defaultVal = opt.Default or opt.CurrentOption or items[1]
-                if type(defaultVal) == "table" then defaultVal = defaultVal[1] end
-                local newDropdown = tab:AddDropdown({
+                local default = opt.Default or opt.CurrentOption or items[1]
+                if type(default) == "table" then default = default[1] end
+                local cb = function(v)
+                    if flag then Items[flag] = v end
+                    if opt.Callback then pcall(opt.Callback, v) end
+                end
+                local elem = tryAdd(addDropdownFn, flag, {
                     Title = opt.Name or "Dropdown",
                     Values = items,
-                    Default = defaultVal,
+                    Options = items,
+                    Default = default,
                     Multi = opt.MultipleOptions or false,
-                    Callback = function(value)
-                        if opt.Flag then Library.Flags[opt.Flag] = value end
-                        if opt.Callback then
-                            local ok, err = pcall(opt.Callback, value)
-                            if not ok then warn("[XOCU][Dropdown] " .. tostring(err)) end
-                        end
-                    end,
-                })
-                if opt.Flag then Library.Items[opt.Flag] = newDropdown end
-                return newDropdown
+                    Callback = cb,
+                }, opt.Name)
+                local w = wrapElem(elem)
+                if w and flag then Items[flag] = w end
+                return w
             end
 
-            function blockWrapper:CreateButton(opt)
+            function block:CreateButton(opt)
                 opt = opt or {}
-                return tab:AddButton({
+                local elem = tryAdd(addButtonFn, nil, {
                     Title = opt.Name or "Button",
                     Description = opt.Tooltip,
                     Callback = function()
-                        if opt.Callback then
-                            local ok, err = pcall(opt.Callback)
-                            if not ok then warn("[XOCU][Button] " .. tostring(err)) end
-                        end
+                        if opt.Callback then pcall(opt.Callback) end
                     end,
-                })
+                }, opt.Name)
+                return wrapElem(elem)
             end
 
-            function blockWrapper:CreateInput(opt)
+            function block:CreateInput(opt)
                 opt = opt or {}
-                return tab:AddInput(opt.Name or "Input", {
+                local elem = tryAdd(addInputFn, opt.Flag, {
                     Title = opt.Name or "Input",
                     Default = opt.Default or "",
                     Placeholder = opt.Placeholder or "",
                     Numeric = opt.Numeric or false,
                     Finished = opt.Finished or false,
-                    Callback = function(value)
-                        if opt.Callback then
-                            local ok, err = pcall(opt.Callback, value)
-                            if not ok then warn("[XOCU][Input] " .. tostring(err)) end
-                        end
+                    Callback = function(v)
+                        if opt.Callback then pcall(opt.Callback, v) end
                     end,
-                })
+                }, opt.Name)
+                return wrapElem(elem)
             end
 
-            function blockWrapper:CreateKeybind(opt)
+            function block:CreateKeybind(opt)
                 opt = opt or {}
-                local keyCode = nil
-                if type(opt.Default) == "string" then
-                    if opt.Default ~= "None" and opt.Default ~= "" then
-                        keyCode = Enum.KeyCode[opt.Default]
+                local key = opt.Default
+                if type(key) == "string" then
+                    if key == "None" or key == "" then
+                        key = nil
+                    else
+                        key = Enum.KeyCode[key]
                     end
-                elseif type(opt.Default) == "userdata" then
-                    keyCode = opt.Default
                 end
-                return tab:AddKeybind(opt.Name or "Keybind", {
+                local elem = tryAdd(addKeybindFn, opt.Flag, {
                     Title = opt.Name or "Keybind",
-                    Default = keyCode,
+                    Default = key,
                     Callback = function()
-                        if opt.Callback then
-                            local ok, err = pcall(opt.Callback)
-                            if not ok then warn("[XOCU][Keybind] " .. tostring(err)) end
-                        end
+                        if opt.Callback then pcall(opt.Callback) end
                     end,
-                })
+                }, opt.Name)
+                return wrapElem(elem)
             end
 
-            function blockWrapper:CreateColorPicker(opt)
+            function block:CreateColorPicker(opt)
                 opt = opt or {}
-                return tab:AddColorPicker(opt.Name or "Color", {
+                local elem = tryAdd(addColorFn, opt.Flag, {
                     Title = opt.Name or "Color",
                     Default = opt.Color or Color3.fromRGB(255, 255, 255),
-                    Callback = function(color)
-                        if opt.Callback then
-                            local ok, err = pcall(opt.Callback, color)
-                            if not ok then warn("[XOCU][ColorPicker] " .. tostring(err)) end
-                        end
+                    Callback = function(c)
+                        if opt.Callback then pcall(opt.Callback, c) end
                     end,
-                })
+                }, opt.Name)
+                return wrapElem(elem)
             end
 
-            return blockWrapper
+            return block
         end
 
         return tabWrapper
     end
 
-    return windowWrapper
+    return wrapper
 end
 
+-- ============================================================
+-- Notify
+-- ============================================================
 function Library:Notify(a, b, c)
-    local opts
+    local title, content, duration
     if type(a) == "table" then
-        opts = a
+        title = a.Title
+        content = a.Content or a.Description
+        duration = a.Duration
+    elseif type(b) == "table" then
+        title = a
+        content = b.Content or b.Description or b.Title
+        duration = b.Duration
     else
-        opts = {
-            Title = tostring(a or "XOCU"),
-            Content = type(b) == "number" and "" or tostring(b or ""),
-            Duration = type(b) == "number" and b or (c or 5),
-        }
+        title = a
+        content = b
+        duration = c
     end
-    pcall(function()
-        Fluent:Notify({
-            Title = opts.Title or "XOCU",
-            Content = opts.Content or opts.Description or "",
-            Duration = opts.Duration or 5,
-        })
-    end)
+    local notifyFn = pick(Fluent, {"Notify", "SendNotification", "ShowNotification"})
+    if not notifyFn then return end
+    pcall(notifyFn, Fluent, {
+        Title = tostring(title or "XOCU"),
+        Content = tostring(content or ""),
+        Duration = tonumber(duration) or 5,
+    })
 end
+
+-- Rayfield を呼んでいる箇所があれば互換化
+local Rayfield = {
+    Notify = function(_, o) Library:Notify(o) end,
+}
+
+-- グローバルに公開（元コードと同じ名前で参照できるように）
+getgenv().Library = Library
+getgenv().Rayfield = Rayfield
+getgenv().Fluent = Fluent
 
 Players = game:GetService('Players')
 TweenService = game:GetService('TweenService')
