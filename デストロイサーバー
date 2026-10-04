@@ -3,8 +3,200 @@ game.Players.LocalPlayer.PlayerScripts.CharacterAndBeamMove.Enabled = false
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
-loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/dcus-official/UI/refs/heads/main/Fluent.Pro/Library.lua"))()
+-- ============================================================
+-- Fluent.Pro Library + FakeLibrary互換ラッパー
+-- XOCU Premium を Fluent.Pro で動かすためのアダプタ
+-- ============================================================
+local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dcus-official/UI/refs/heads/main/Fluent.Pro/Library.lua"))()
+
+local Library = {}
+Library.Items = {}
+Library.Flags = {}
+Library._window = nil
+
+function Library:CreateWindow(opts)
+    opts = opts or {}
+    local window = Fluent:CreateWindow({
+        Title = opts.Title or "XOCU",
+        SubTitle = opts.LoadingSubtitle or "by mochi",
+        TabWidth = 160,
+        Size = UDim2.fromOffset(620, 480),
+        Acrylic = true,
+        Theme = "Dark",
+        MinimizeKey = opts.ToggleKey or Enum.KeyCode.RightShift,
+    })
+    Library._window = window
+
+    local windowWrapper = {}
+
+    function windowWrapper:CreateTab(name, selected, imageId)
+        local tab = window:AddTab({ Title = name or "Tab", Icon = "" })
+        local tabWrapper = {}
+
+        function tabWrapper:CreateBlock(o)
+            o = o or {}
+            tab:AddSection(o.Name or "Section")
+            local blockWrapper = {}
+
+            function blockWrapper:CreateToggle(opt)
+                opt = opt or {}
+                local defaultVal = opt.Default or false
+                local newToggle = tab:AddToggle({
+                    Title = opt.Name or "Toggle",
+                    Description = opt.Tooltip,
+                    Default = defaultVal,
+                    Callback = function(value)
+                        if opt.Flag then Library.Flags[opt.Flag] = value end
+                        if opt.Callback then
+                            local ok, err = pcall(opt.Callback, value)
+                            if not ok then warn("[XOCU][Toggle] " .. tostring(err)) end
+                        end
+                    end,
+                })
+                if opt.Flag then Library.Items[opt.Flag] = newToggle end
+                if opt.Flag and SetToggleState then SetToggleState(opt.Flag, defaultVal) end
+                return newToggle
+            end
+
+            function blockWrapper:CreateSlider(opt)
+                opt = opt or {}
+                local range = opt.Range or { opt.Min or 0, opt.Max or 100 }
+                local defaultVal = opt.Default or opt.CurrentValue or range[1]
+                local newSlider = tab:AddSlider({
+                    Title = opt.Name or "Slider",
+                    Default = defaultVal,
+                    Min = range[1],
+                    Max = range[2],
+                    Rounding = opt.Increment or 0,
+                    Callback = function(value)
+                        if opt.Flag then Library.Flags[opt.Flag] = value end
+                        if opt.Callback then
+                            local ok, err = pcall(opt.Callback, value)
+                            if not ok then warn("[XOCU][Slider] " .. tostring(err)) end
+                        end
+                    end,
+                })
+                if opt.Flag then Library.Items[opt.Flag] = newSlider end
+                return newSlider
+            end
+
+            function blockWrapper:CreateDropdown(opt)
+                opt = opt or {}
+                local items = opt.Items or opt.Options or {}
+                local defaultVal = opt.Default or opt.CurrentOption or items[1]
+                if type(defaultVal) == "table" then defaultVal = defaultVal[1] end
+                local newDropdown = tab:AddDropdown({
+                    Title = opt.Name or "Dropdown",
+                    Values = items,
+                    Default = defaultVal,
+                    Multi = opt.MultipleOptions or false,
+                    Callback = function(value)
+                        if opt.Flag then Library.Flags[opt.Flag] = value end
+                        if opt.Callback then
+                            local ok, err = pcall(opt.Callback, value)
+                            if not ok then warn("[XOCU][Dropdown] " .. tostring(err)) end
+                        end
+                    end,
+                })
+                if opt.Flag then Library.Items[opt.Flag] = newDropdown end
+                return newDropdown
+            end
+
+            function blockWrapper:CreateButton(opt)
+                opt = opt or {}
+                return tab:AddButton({
+                    Title = opt.Name or "Button",
+                    Description = opt.Tooltip,
+                    Callback = function()
+                        if opt.Callback then
+                            local ok, err = pcall(opt.Callback)
+                            if not ok then warn("[XOCU][Button] " .. tostring(err)) end
+                        end
+                    end,
+                })
+            end
+
+            function blockWrapper:CreateInput(opt)
+                opt = opt or {}
+                return tab:AddInput(opt.Name or "Input", {
+                    Title = opt.Name or "Input",
+                    Default = opt.Default or "",
+                    Placeholder = opt.Placeholder or "",
+                    Numeric = opt.Numeric or false,
+                    Finished = opt.Finished or false,
+                    Callback = function(value)
+                        if opt.Callback then
+                            local ok, err = pcall(opt.Callback, value)
+                            if not ok then warn("[XOCU][Input] " .. tostring(err)) end
+                        end
+                    end,
+                })
+            end
+
+            function blockWrapper:CreateKeybind(opt)
+                opt = opt or {}
+                local keyCode = nil
+                if type(opt.Default) == "string" then
+                    if opt.Default ~= "None" and opt.Default ~= "" then
+                        keyCode = Enum.KeyCode[opt.Default]
+                    end
+                elseif type(opt.Default) == "userdata" then
+                    keyCode = opt.Default
+                end
+                return tab:AddKeybind(opt.Name or "Keybind", {
+                    Title = opt.Name or "Keybind",
+                    Default = keyCode,
+                    Callback = function()
+                        if opt.Callback then
+                            local ok, err = pcall(opt.Callback)
+                            if not ok then warn("[XOCU][Keybind] " .. tostring(err)) end
+                        end
+                    end,
+                })
+            end
+
+            function blockWrapper:CreateColorPicker(opt)
+                opt = opt or {}
+                return tab:AddColorPicker(opt.Name or "Color", {
+                    Title = opt.Name or "Color",
+                    Default = opt.Color or Color3.fromRGB(255, 255, 255),
+                    Callback = function(color)
+                        if opt.Callback then
+                            local ok, err = pcall(opt.Callback, color)
+                            if not ok then warn("[XOCU][ColorPicker] " .. tostring(err)) end
+                        end
+                    end,
+                })
+            end
+
+            return blockWrapper
+        end
+
+        return tabWrapper
+    end
+
+    return windowWrapper
+end
+
+function Library:Notify(a, b, c)
+    local opts
+    if type(a) == "table" then
+        opts = a
+    else
+        opts = {
+            Title = tostring(a or "XOCU"),
+            Content = type(b) == "number" and "" or tostring(b or ""),
+            Duration = type(b) == "number" and b or (c or 5),
+        }
+    end
+    pcall(function()
+        Fluent:Notify({
+            Title = opts.Title or "XOCU",
+            Content = opts.Content or opts.Description or "",
+            Duration = opts.Duration or 5,
+        })
+    end)
+end
 
 Players = game:GetService('Players')
 TweenService = game:GetService('TweenService')
