@@ -4299,7 +4299,191 @@ task.spawn(function()
         end
     end
 end)
+-- =====================================================
+-- Visuals: Black Hole Texture
+-- =====================================================
+local BlackHoleGroup = Tabs.Visuals:AddLeftGroupbox("Black Hole Texture")
 
+local BHK_Master = {
+    enabled = false,
+    watcherConn = nil,
+    appliedList = {},
+    selectedTexture = "blackhole1",
+}
+
+local BHK_Textures = {
+    blackhole1 = {
+        assetId = "rbxassetid://99340233207059",
+        display = "blackhole1",
+        image = "rbxassetid://99340233207059",
+    },
+    blackhole2 = {
+        assetId = "rbxassetid://8387416709",
+        display = "blackhole2",
+        image = "rbxassetid://8387416709",
+    },
+    blackhole3 = {
+        assetId = "rbxassetid://8777548884",
+        display = "blackhole3",
+        image = "rbxassetid://8777548884",
+    },
+    blackhole4 = {
+        assetId = "rbxassetid://16081893047",
+        display = "blackhole4",
+        image = "rbxassetid://16081893047",
+    },
+    blackhole5 = {
+        assetId = "rbxassetid://16081893047",
+        display = "blackhole5",
+        image = "rbxassetid://16081893047",
+    },
+    blackhole6 = {
+        assetId = "rbxassetid://3097686631",
+        display = "blackhole6",
+        image = "rbxassetid://3097686631",
+    },
+    blackhole7 = {
+        assetId = "rbxassetid://7874817761",
+        display = "blackhole7",
+        image = "rbxassetid://7874817761",
+    },
+    blackhole8 = {
+        assetId = "rbxassetid://91546602453505",
+        display = "blackhole8",
+        image = "rbxassetid://91546602453505",
+    },
+}
+
+local function BHK_applyRealisticBH(model, assetId)
+    if not model then return end
+    local success, realisticModel = pcall(function()
+        return game:GetObjects(assetId)[1]
+    end)
+    if not success or not realisticModel then return end
+    local hole = model:FindFirstChild("Hole")
+    if not hole then
+        realisticModel:Destroy()
+        return
+    end
+    for _, obj in pairs(realisticModel:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Beam") or obj:IsA("Sound") or obj:IsA("Trail") then
+            local clone = obj:Clone()
+            clone.Parent = hole
+            table.insert(BHK_Master.appliedList, clone)
+        end
+        if obj:IsA("BillboardGui") then
+            local currentGui = hole:FindFirstChild("BillboardGui")
+            if currentGui then
+                local newGui = obj:Clone()
+                newGui.Parent = hole
+                if currentGui:FindFirstChild("Large") and newGui:FindFirstChild("Large") then
+                    currentGui.Large.Image = newGui.Large.Image
+                end
+                if currentGui:FindFirstChild("Small") and newGui:FindFirstChild("Small") then
+                    currentGui.Small.Image = newGui.Small.Image
+                end
+                newGui:Destroy()
+            end
+        end
+    end
+    realisticModel:Destroy()
+end
+
+local function BHK_applyAll(model)
+    if not model then return end
+    local tex = BHK_Textures[BHK_Master.selectedTexture]
+    if tex then
+        BHK_applyRealisticBH(model, tex.assetId)
+    end
+end
+
+local function BHK_startAll()
+    BHK_Master.enabled = true
+    BHK_Master.appliedList = {}
+    local existing = Workspace:FindFirstChild("BlackHoleKick")
+    if existing then
+        BHK_applyAll(existing)
+    end
+    if BHK_Master.watcherConn then
+        pcall(function() BHK_Master.watcherConn:Disconnect() end)
+    end
+    BHK_Master.watcherConn = Workspace.ChildAdded:Connect(function(child)
+        if child.Name == "BlackHoleKick" then
+            task.wait(0.1)
+            BHK_applyAll(child)
+        end
+    end)
+end
+
+local function BHK_stopAll()
+    BHK_Master.enabled = false
+    if BHK_Master.watcherConn then
+        pcall(function() BHK_Master.watcherConn:Disconnect() end)
+        BHK_Master.watcherConn = nil
+    end
+    for _, obj in ipairs(BHK_Master.appliedList) do
+        pcall(function()
+            if obj and obj.Parent then
+                obj:Destroy()
+            end
+        end)
+    end
+    BHK_Master.appliedList = {}
+end
+
+BlackHoleGroup:AddDropdown("BlackHoleTextureSelect", {
+    Text = "テクスチャ選択",
+    Values = { "blackhole1", "blackhole2", "blackhole3", "blackhole4", "blackhole5", "blackhole6", "blackhole7", "blackhole8" },
+    Default = "blackhole1",
+    Callback = function(v)
+        BHK_Master.selectedTexture = v
+        if BHK_Master.enabled then
+            BHK_stopAll()
+            task.wait(0.1)
+            BHK_startAll()
+        end
+    end,
+})
+
+BlackHoleGroup:AddToggle("BlackHoleToggle", {
+    Text = "ブラックホールテクスチャ",
+    Default = false,
+    Callback = function(v)
+        if v then
+            BHK_startAll()
+        else
+            BHK_stopAll()
+        end
+    end,
+})
+
+-- ドロップダウン項目に画像を追加
+task.spawn(function()
+    local function tryInject()
+        local root = (gethui and gethui()) or game:GetService("CoreGui")
+        for _, desc in ipairs(root:GetDescendants()) do
+            if desc:IsA("TextButton") and BHK_Textures[desc.Text] then
+    local parent = desc.Parent
+    -- ドロップダウンのオプションリスト（ScrollingFrame内）のみ対象
+    if parent and parent:IsA("ScrollingFrame") then
+        if not desc:FindFirstChild("ClyrixBHIcon") then
+            local tex = BHK_Textures[desc.Text]
+            local icon = Instance.new("ImageLabel")
+            icon.Name = "ClyrixBHIcon"
+            icon.Size = UDim2.new(0, 18, 0, 18)
+            icon.Position = UDim2.new(0, 6, 0.5, -9)
+            icon.BackgroundTransparency = 1
+            icon.Image = tex.image
+            icon.ScaleType = Enum.ScaleType.Fit
+            icon.Parent = desc
+
+            -- テキストを右にずらす
+            local padding = Instance.new("UIPadding")
+            padding.PaddingLeft = UDim.new(0, 28)
+            padding.Parent = desc
+        end
+    end
+end
 -- =====================================================
 -- UI Settings
 -- =====================================================
