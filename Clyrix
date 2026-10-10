@@ -4481,9 +4481,18 @@ task.spawn(function()
             local padding = Instance.new("UIPadding")
             padding.PaddingLeft = UDim.new(0, 28)
             padding.Parent = desc
+                    end
+                end
+            end
         end
     end
-end
+    while task.wait(0.3) do
+        pcall(tryInject)
+    end
+end)
+
+-- =====================================================
+-- UI Settings
 -- =====================================================
 -- UI Settings
 -- =====================================================
