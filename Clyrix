@@ -49,6 +49,7 @@ local Tabs = {
     Player = Window:AddTab("Player", "user"),
     Server = Window:AddTab("Server", "server"),
     Whitelist = Window:AddTab("Whitelist", "user-check"),
+    Notify = Window:AddTab("通知", "bell"),
     Visuals = Window:AddTab("Visuals", "eye"),
     Credits = Window:AddTab("Credits", "users"),
     UISettings = Window:AddTab("UI Settings", "settings"),
@@ -3895,6 +3896,76 @@ task.spawn(function()
         refreshWhitelistUI()
     end
 end)
+-- =====================================================
+-- 通知タブ: LINE通知
+-- =====================================================
+local LineNotifyGroup = Tabs.Notify:AddLeftGroupbox("LINE通知")
+
+local LineLagCFG = {
+    detectorEnabled = true,
+    notifyTime = 3,
+    timeOut = false,
+    lastLineLagger = nil,
+}
+
+local LineGrabEvents = replicatedStorage:FindFirstChild("GrabEvents")
+local LineCreateGrabLine = LineGrabEvents and LineGrabEvents:FindFirstChild("CreateGrabLine")
+
+if LineCreateGrabLine then
+    LineCreateGrabLine.OnClientEvent:Connect(function(arg, arg2, arg3)
+        if not LineLagCFG.detectorEnabled then return end
+        if LineLagCFG.timeOut then return end
+        if typeof(arg3) ~= "CFrame" then return end
+
+        local spawnLoc = Workspace:FindFirstChild("SpawnLocation")
+        if not spawnLoc then return end
+
+        if (spawnLoc.Position - arg3.Position).Magnitude > 100000 then
+            local plr = Players:FindFirstChild(tostring(arg))
+            if not plr then return end
+
+            LineLagCFG.timeOut = true
+
+            if LineLagCFG.lastLineLagger ~= plr then
+                LineLagCFG.lastLineLagger = plr
+
+                local notifyText = "Line Lag Detected"
+                    .. "\nPlayer: " .. plr.DisplayName .. " (" .. plr.Name .. ")"
+                    .. "\nPart: " .. tostring(arg2)
+                    .. "\nCFrame: ("
+                        .. math.round(arg3.Position.X) .. ", "
+                        .. math.round(arg3.Position.Y) .. ", "
+                        .. math.round(arg3.Position.Z) .. ")"
+
+                Library:Notify({
+                    Title = "⚠ Line Lag Detected",
+                    Description = notifyText,
+                    Time = LineLagCFG.notifyTime,
+                })
+            end
+
+            task.wait(LineLagCFG.timeOut and 3.3 or 0)
+            LineLagCFG.timeOut = false
+            LineLagCFG.lastLineLagger = nil
+        end
+    end)
+end
+
+LineNotifyGroup:AddToggle("LineLagDetectorToggle", {
+    Text = "Line Lag Detector",
+    Default = true,
+    Callback = function(v)
+        LineLagCFG.detectorEnabled = v
+    end,
+})
+
+LineNotifyGroup:AddSlider("LineLagNotifyTime", {
+    Text = "通知の表示時間",
+    Default = 3, Min = 1, Max = 10, Rounding = 0, Suffix = "秒",
+    Callback = function(v)
+        LineLagCFG.notifyTime = v
+    end,
+})
 
 -- =====================================================
 -- Server タブ: HOUSE (Plot Breaker)
