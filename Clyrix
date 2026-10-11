@@ -5942,6 +5942,97 @@ EspGroup:AddSlider("EspBaseSize", { Text = "Base Size", Default = 10, Min = 1, M
         for _, data in pairs(espData) do data.BaseSize = Value end
     end })
 
+-- PCLD ESP (ESP Groupbox 内)
+local PCLDEnabled = false
+local TweenService_PCLD = game:GetService("TweenService")
+
+local function PCLD_ApplyCloned(clonedPCLD)
+    pcall(function()
+        if PCLDEnabled then
+            clonedPCLD.Transparency = 0.7
+            clonedPCLD.Color = Color3.fromRGB(255, 255, 255)
+            local sb = clonedPCLD:FindFirstChild("SelectionBox")
+            if not sb then
+                sb = Instance.new("SelectionBox")
+                sb.Adornee = clonedPCLD
+                sb.Parent = clonedPCLD
+            end
+            sb.Color3 = Color3.fromRGB(255, 255, 255)
+            sb.LineThickness = 0.01
+        else
+            clonedPCLD.Transparency = 1
+            local sb = clonedPCLD:FindFirstChild("SelectionBox")
+            if sb then sb:Destroy() end
+        end
+    end)
+end
+
+local function PCLD_UpdateParent(parent)
+    if parent.Name ~= "PlayerCharacterLocationDetector" then return end
+    task.spawn(function()
+        if parent.Position == Vector3.zero then
+            while parent and parent.Position == Vector3.zero do
+                task.wait()
+            end
+        end
+        if not parent.Parent then return end
+        local clonedPCLD = parent:FindFirstChild("ClonedPCLD")
+        if PCLDEnabled and not clonedPCLD then
+            clonedPCLD = parent:Clone()
+            clonedPCLD.Name = "ClonedPCLD"
+            clonedPCLD.Material = Enum.Material.Neon
+            clonedPCLD.Parent = parent
+            parent:GetPropertyChangedSignal("CFrame"):Connect(function()
+                if not clonedPCLD.Parent then return end
+                pcall(function()
+                    TweenService_PCLD:Create(
+                        clonedPCLD,
+                        TweenInfo.new(0.15, Enum.EasingStyle.Linear),
+                        { CFrame = parent.CFrame }
+                    ):Play()
+                end)
+            end)
+        end
+        if clonedPCLD then
+            PCLD_ApplyCloned(clonedPCLD)
+        end
+    end)
+end
+
+local function PCLD_UpdateAll()
+    for _, v in ipairs(Workspace:GetChildren()) do
+        PCLD_UpdateParent(v)
+    end
+end
+
+Workspace.ChildAdded:Connect(function(child)
+    if PCLDEnabled then
+        PCLD_UpdateParent(child)
+    end
+end)
+
+EspGroup:AddToggle("PCLDViewToggle", {
+    Text = "PCLD View",
+    Default = false,
+    Callback = function(value)
+        PCLDEnabled = value
+        if value then
+            PCLD_UpdateAll()
+        else
+            for _, v in ipairs(Workspace:GetChildren()) do
+                if v.Name == "PlayerCharacterLocationDetector" then
+                    local clone = v:FindFirstChild("ClonedPCLD")
+                    if clone then
+                        clone.Transparency = 1
+                        local sb = clone:FindFirstChild("SelectionBox")
+                        if sb then sb:Destroy() end
+                    end
+                end
+            end
+        end
+    end,
+})
+
 task.spawn(function()
     local accumulatedTime = 0
     RunService.RenderStepped:Connect(function(dt)
