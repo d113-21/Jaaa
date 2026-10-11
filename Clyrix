@@ -69,9 +69,9 @@ local Tabs = {
 -- ★ Target タブ: Target + ドリフトキック調節 + Ragdoll Kill + ドリフトキック
 -- =====================================================
 local TargetGroup = Tabs.Target:AddLeftGroupbox("Target")
-local DriftSettingsGroup = Tabs.Target:AddLeftGroupbox("ドリフトキック調節")
+local DriftSettingsGroup = Tabs.Target:AddLeftGroupbox("Drift Kick setting")
 local RagdollGroup = Tabs.Target:AddRightGroupbox("Kill Mode")
-local DriftKickGroup = Tabs.Target:AddRightGroupbox("ドリフトキック")
+local DriftKickGroup = Tabs.Target:AddRightGroupbox("Kick Mode")
 
 -- 共有選択プレイヤー
 local selectedPlayer = nil
@@ -433,7 +433,7 @@ end
 
 -- ドリフトキック ON/OFF
 DriftKickGroup:AddToggle("DriftKickToggle", {
-    Text = "ドリフトキック",
+    Text = "Drift Kick(blob)",
     Default = false,
     Callback = function(on)
         masterEnabled = on
@@ -465,6 +465,1194 @@ DriftKickGroup:AddToggle("DriftKickToggle", {
         end
     end
 })
+-- ============================================================
+-- Kick Mode: XOCU Kick Hub (kickxocu.txt ソース統合)
+-- ============================================================
+do
+    -- ソース準拠エイリアス
+    P = Players
+    ReplicatedStorage = replicatedStorage
+    GrabEvents = replicatedStorage:FindFirstChild("GrabEvents")
+    SetNetworkOwner = GrabEvents and GrabEvents:FindFirstChild("SetNetworkOwner")
+    DestroyGrabLine = GrabEvents and GrabEvents:FindFirstChild("DestroyGrabLine")
+    CreateGrabLine = GrabEvents and GrabEvents:FindFirstChild("CreateGrabLine")
+    MenuToys = replicatedStorage:FindFirstChild("MenuToys")
+    SpawnToyRemoteFunction = MenuToys and MenuToys:FindFirstChild("SpawnToyRemoteFunction")
+    DestroyToy = MenuToys and MenuToys:FindFirstChild("DestroyToy")
+
+    -- Library ブリッジ（Obsidian形式に自動変換）
+    local Library = {
+        Notify = function(self, data)
+            pcall(function()
+                Library_Global:Notify({
+                    Title = data.Title or "XOCU",
+                    Description = data.Content or data.Description or "",
+                    Time = data.Duration or data.Time or 3,
+                })
+            end)
+        end
+    }
+
+    -- char 互換
+    char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    LocalPlayer.CharacterAdded:Connect(function(c)
+        char = c
+        task.wait(1)
+    end)
+
+    -- ターゲット同期（既存の Target タブと連動）
+    selectedPlrName = nil
+    selectedKickPlayer = nil
+    task.spawn(function()
+        while task.wait(0.15) do
+            selectedPlrName = selectedPlayer
+            selectedKickPlayer = selectedTargetPlayerObj
+        end
+    end)
+
+    -- Helpers（ソースそのまま）
+    function GetHRH(arg)
+        if arg then
+            return arg:FindFirstChild("Head"), arg:FindFirstChild("HumanoidRootPart"), (arg:FindFirstChild("Humanoid"))
+        end
+    end
+
+    function Teleport(arg, arg2, arg3)
+        if arg and arg2 and arg3 then
+            arg.CFrame = arg2 * arg3
+            arg.Velocity = Vector3.zero
+            arg.RotVelocity = Vector3.zero
+        end
+    end
+
+    function Ownerboat(arg)
+        if not arg then return nil end
+        SetNetworkOwner:FireServer(arg, arg.CFrame)
+        if arg:FindFirstChild("PartOwner") and arg.PartOwner.Value == LocalPlayer.Name then
+            return arg.PartOwner
+        end
+        return nil
+    end
+
+    function UnGrab(arg)
+        GrabEvents.DestroyGrabLine:FireServer(arg)
+    end
+
+    -- ===== Xocu Kick (Best) — 元コードそのまま =====
+    do
+        local oatsKickActive = false
+        local oatsKickTask = nil
+
+        DriftKickGroup:AddToggle("OatsKick", {
+            Text = "Xocu Kick(Best)",
+            Default = false,
+            Callback = function(Value)
+                oatsKickActive = Value
+
+                local function sno(part)
+                    pcall(function()
+                        local grabEvents = game:GetService("ReplicatedStorage"):FindFirstChild("GrabEvents")
+                        local setNetOwner = grabEvents and grabEvents:FindFirstChild("SetNetworkOwner")
+                        if setNetOwner then
+                            setNetOwner:FireServer(part, part.CFrame)
+                        end
+                    end)
+                end
+
+                if Value then
+                    local targetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+                    if not targetName or targetName == "" then
+                        oatsKickActive = false
+                        Library:Notify({ Title = "Error", Content = "Select target first!", Time = 3 })
+                        Toggles.OatsKick:SetValue(false)
+                        return
+                    end
+
+                    oatsKickTask = task.spawn(function()
+                        local RunService = game:GetService("RunService")
+                        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+                        local myChar = LocalPlayer.Character
+                        local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                        if not (myChar and myHRP) then
+                            oatsKickActive = false
+                            return
+                        end
+
+                        local savedPos = myHRP.CFrame
+                        local lastRemoteFire = tick()
+
+                        while oatsKickActive and RunService.Heartbeat:Wait() do
+                            local currentTargetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+                            local targetPlayer = currentTargetName and game:GetService("Players"):FindFirstChild(currentTargetName)
+
+                            if not targetPlayer or not targetPlayer.Character then
+                                break
+                            end
+
+                            myChar = LocalPlayer.Character
+                            myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                            local myHead = myChar and myChar:FindFirstChild("Head")
+
+                            local tChar = targetPlayer.Character
+                            local tHRP = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                            local tHum = tChar and tChar:FindFirstChild("Humanoid")
+
+                            if not (myChar and myHRP and myHead) or not (tHRP and tHum) or tHum.Health <= 0 then
+                                continue
+                            end
+
+                            local dist = (tHRP.Position - myHRP.Position).Magnitude
+
+                            if dist > 30 then
+                                pcall(function()
+                                    myChar:PivotTo(tHRP.CFrame * CFrame.new(0, 2, 4))
+                                end)
+
+                                sno(tHRP)
+
+                                if not tHRP:FindFirstChild("KickAlign") then
+                                    local oldBp = tHRP:FindFirstChildOfClass("BodyPosition")
+                                    if oldBp then oldBp:Destroy() end
+
+                                    local att0 = Instance.new("Attachment", tHRP)
+                                    att0.Name = "KickAtt0"
+
+                                    local att1 = Instance.new("Attachment", workspace.Terrain)
+                                    att1.Name = "KickAtt1"
+
+                                    local alignPos = Instance.new("AlignPosition")
+                                    alignPos.Name = "KickAlign"
+                                    alignPos.Attachment0 = att0
+                                    alignPos.Attachment1 = att1
+                                    alignPos.MaxForce = math.huge
+                                    alignPos.Responsiveness = 200
+                                    alignPos.Parent = tHRP
+
+                                    local alignRot = Instance.new("AlignOrientation")
+                                    alignRot.Name = "KickRot"
+                                    alignRot.Attachment0 = att0
+                                    alignRot.Mode = Enum.OrientationAlignmentMode.OneAttachment
+                                    alignRot.CFrame = CFrame.new()
+                                    alignRot.MaxTorque = math.huge
+                                    alignRot.Responsiveness = 200
+                                    alignRot.Parent = tHRP
+                                end
+
+                                local grabStartTime = tick()
+                                while (tick() - grabStartTime) < 0.3 and oatsKickActive do
+                                    task.wait(0.05)
+                                    sno(tHRP)
+                                    pcall(function()
+                                        local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+                                        local destroyLine = grabEvents and grabEvents:FindFirstChild("DestroyGrabLine")
+                                        if destroyLine then
+                                            destroyLine:FireServer(tHRP)
+                                        end
+                                    end)
+
+                                    local align = tHRP:FindFirstChild("KickAlign")
+                                    if myHead and align and align.Attachment1 then
+                                        align.Attachment1.WorldPosition = myHead.Position + Vector3.new(0, 15, 0)
+                                    end
+                                end
+
+                                if oatsKickActive then
+                                    pcall(function()
+                                        myChar:PivotTo(savedPos)
+                                        tHRP.CFrame = savedPos * CFrame.new(0, 15, 0)
+                                    end)
+                                end
+
+                                continue
+                            end
+
+                            if not tHRP:FindFirstChild("KickAlign") then
+                                local oldBp = tHRP:FindFirstChildOfClass("BodyPosition")
+                                if oldBp then oldBp:Destroy() end
+
+                                local att0 = Instance.new("Attachment", tHRP)
+                                att0.Name = "KickAtt0"
+
+                                local att1 = Instance.new("Attachment", workspace.Terrain)
+                                att1.Name = "KickAtt1"
+
+                                local alignPos = Instance.new("AlignPosition")
+                                alignPos.Name = "KickAlign"
+                                alignPos.Attachment0 = att0
+                                alignPos.Attachment1 = att1
+                                alignPos.MaxForce = math.huge
+                                alignPos.Responsiveness = 200
+                                alignPos.Parent = tHRP
+
+                                local alignRot = Instance.new("AlignOrientation")
+                                alignRot.Name = "KickRot"
+                                alignRot.Attachment0 = att0
+                                alignRot.Mode = Enum.OrientationAlignmentMode.OneAttachment
+                                alignRot.CFrame = CFrame.new()
+                                alignRot.MaxTorque = math.huge
+                                alignRot.Responsiveness = 200
+                                alignRot.Parent = tHRP
+                            end
+
+                            sno(tHRP)
+
+                            local align = tHRP:FindFirstChild("KickAlign")
+                            if align and align.Attachment1 and oatsKickActive then
+                                align.Attachment1.WorldPosition = myHead.Position + Vector3.new(0, 20, 0)
+                            end
+
+                            local rot = tHRP:FindFirstChild("KickRot")
+                            if rot then
+                                rot.CFrame = CFrame.Angles(0, 0, 0)
+                            end
+
+                            if tick() - lastRemoteFire > 0.05 and oatsKickActive then
+                                pcall(function()
+                                    local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+                                    local destroyLine = grabEvents and grabEvents:FindFirstChild("DestroyGrabLine")
+                                    if destroyLine then
+                                        destroyLine:FireServer(tHRP)
+                                    end
+                                end)
+                                lastRemoteFire = tick()
+                            end
+                        end
+
+                        local finalTargetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+                        local finalTarget = finalTargetName and game:GetService("Players"):FindFirstChild(finalTargetName)
+
+                        if finalTarget and finalTarget.Character then
+                            local tH = finalTarget.Character:FindFirstChild("HumanoidRootPart")
+                            if tH then
+                                local align = tH:FindFirstChild("KickAlign")
+                                local rot = tH:FindFirstChild("KickRot")
+                                local att0 = tH:FindFirstChild("KickAtt0")
+
+                                if align then
+                                    if align.Attachment1 then align.Attachment1:Destroy() end
+                                    align:Destroy()
+                                end
+                                if rot then rot:Destroy() end
+                                if att0 then att0:Destroy() end
+
+                                pcall(function()
+                                    local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
+                                    local destroyLine = grabEvents and grabEvents:FindFirstChild("DestroyGrabLine")
+                                    if destroyLine then
+                                        destroyLine:FireServer(tH)
+                                    end
+                                end)
+                            end
+                        end
+
+                        oatsKickActive = false
+                    end)
+                else
+                    oatsKickActive = false
+                    if oatsKickTask then
+                        task.cancel(oatsKickTask)
+                        oatsKickTask = nil
+                    end
+
+                    local currentTargetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+                    local targetPlayer = currentTargetName and game:GetService("Players"):FindFirstChild(currentTargetName)
+
+                    if targetPlayer and targetPlayer.Character then
+                        local tH = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if tH then
+                            local align = tH:FindFirstChild("KickAlign")
+                            local rot = tH:FindFirstChild("KickRot")
+                            local att0 = tH:FindFirstChild("KickAtt0")
+
+                            if align then
+                                if align.Attachment1 then align.Attachment1:Destroy() end
+                                align:Destroy()
+                            end
+                            if rot then rot:Destroy() end
+                            if att0 then att0:Destroy() end
+
+                            pcall(function()
+                                local grabEvents = game:GetService("ReplicatedStorage"):FindFirstChild("GrabEvents")
+                                local destroyLine = grabEvents and grabEvents:FindFirstChild("DestroyGrabLine")
+                                if destroyLine then
+                                    destroyLine:FireServer(tH)
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+        })
+    end
+
+    -- ===== Ownership Kick (4独立トグル) — 元コードそのまま =====
+    local function runOwnershipKick(mode)
+        local targetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+        if not targetName or targetName == "" then
+            Library:Notify({ Title = "Error", Description = "Select target first!", Time = 3 })
+            return nil
+        end
+
+        local ownershipKickActive = true
+        local ownershipKickConnections = {}
+
+        local task_handle = task.spawn(function()
+            local Players = game:GetService("Players")
+            local RunService = game:GetService("RunService")
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local Workspace = game:GetService("Workspace")
+            local LocalPlayer = Players.LocalPlayer
+
+            local target = Players:FindFirstChild(targetName)
+            if not target then
+                ownershipKickActive = false
+                return
+            end
+
+            local GE = ReplicatedStorage:WaitForChild("GrabEvents")
+            local SetNetOwner = GE:WaitForChild("SetNetworkOwner")
+            local DestroyGrabLine = GE:WaitForChild("DestroyGrabLine")
+
+            local ZERO_VECTOR = Vector3.new(0, 0, 0)
+            local HIDDEN_CF = CFrame.new(0, 1e9, 0)
+
+            if mode == "Xocu Ownership Kick(80+ fps)" then
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot then
+                    ownershipKickActive = false
+                    return
+                end
+
+                local savedPos = myRoot.CFrame
+                local dragging = false
+                local grabStartTime = 0
+                local checkStartTime = 0
+
+                local currentFPS = 60
+                local fpsConnection = RunService.RenderStepped:Connect(function(dt)
+                    currentFPS = 1 / dt
+                end)
+                table.insert(ownershipKickConnections, fpsConnection)
+
+                local bodyPos = nil
+                local bodyGyro = nil
+
+                local function cleanupBodies()
+                    pcall(function()
+                        if bodyPos then bodyPos:Destroy() bodyPos = nil end
+                        if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+                    end)
+                end
+
+                local function createBodies(targetRoot, pos)
+                    cleanupBodies()
+                    for _, v in pairs(targetRoot:GetChildren()) do
+                        if v:IsA("BodyPosition") or v:IsA("BodyGyro") then
+                            v:Destroy()
+                        end
+                    end
+                    bodyPos = Instance.new("BodyPosition")
+                    bodyPos.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                    bodyPos.D = 100
+                    bodyPos.Position = pos
+                    bodyPos.Parent = targetRoot
+                    bodyGyro = Instance.new("BodyGyro")
+                    bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+                    bodyGyro.D = 100
+                    bodyGyro.CFrame = CFrame.new(pos)
+                    bodyGyro.Parent = targetRoot
+                end
+
+                while ownershipKickActive do
+                    local currentTargetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+                    local currentTarget = currentTargetName and Players:FindFirstChild(currentTargetName)
+                    if not currentTarget or not currentTarget.Character or not currentTarget.Parent then
+                        cleanupBodies()
+                        break
+                    end
+                    myChar = LocalPlayer.Character
+                    myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    local tChar = currentTarget.Character
+                    local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                    local tHum = tChar and tChar:FindFirstChild("Humanoid")
+                    if tRoot and tHum and tHum.Health > 0 and myRoot then
+                        if not dragging then
+                            myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 3)
+                            cleanupBodies()
+                            checkStartTime = 0
+                            pcall(function()
+                                tHum.PlatformStand = true
+                                tHum.Sit = true
+                                if GE:FindFirstChild("SetNetworkOwner") then GE.SetNetworkOwner:FireServer(tRoot, tRoot.CFrame) end
+                                if GE:FindFirstChild("SetNetworkOwner") then GE.SetNetworkOwner:FireServer(tRoot, tRoot.CFrame) end
+                                if GE:FindFirstChild("DestroyGrabLine") then GE.DestroyGrabLine:FireServer(tRoot) end
+                            end)
+                            myRoot.AssemblyLinearVelocity = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            if grabStartTime == 0 then grabStartTime = tick() end
+                            if tick() - grabStartTime > 0.15 then
+                                dragging = true
+                                grabStartTime = 0
+                                checkStartTime = tick()
+                                local lockPos = savedPos * CFrame.new(5, 20, 4)
+                                createBodies(tRoot, lockPos.Position)
+                            end
+                        else
+                            myRoot.CFrame = savedPos
+                            local lockPos = savedPos * CFrame.new(5, 20, 4)
+                            myRoot.AssemblyLinearVelocity = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            if bodyPos and bodyPos.Parent then
+                                bodyPos.Position = lockPos.Position
+                                if bodyGyro then bodyGyro.CFrame = lockPos end
+                            else
+                                createBodies(tRoot, lockPos.Position)
+                            end
+                            tHum.PlatformStand = true
+                            pcall(function()
+                                if GE:FindFirstChild("SetNetworkOwner") and GE:FindFirstChild("DestroyGrabLine") then
+                                    if currentFPS > 200 then
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.DestroyGrabLine:FireServer(tRoot)
+                                    elseif currentFPS >= 155 and currentFPS <= 200 then
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.DestroyGrabLine:FireServer(tRoot)
+                                    else
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                        GE.DestroyGrabLine:FireServer(tRoot)
+                                    end
+                                end
+                            end)
+                            if checkStartTime > 0 and tick() - checkStartTime > 0.15 then
+                                local currentDist = (tRoot.Position - lockPos.Position).Magnitude
+                                if currentDist > 10 then
+                                    dragging = false
+                                    grabStartTime = 0
+                                    checkStartTime = 0
+                                    cleanupBodies()
+                                    myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 3)
+                                else
+                                    checkStartTime = tick()
+                                end
+                            end
+                        end
+                    else
+                        dragging = false
+                        grabStartTime = 0
+                        checkStartTime = 0
+                        cleanupBodies()
+                    end
+                    RunService.Heartbeat:Wait()
+                end
+                cleanupBodies()
+                if myRoot then myRoot.CFrame = savedPos end
+
+            elseif mode == "Xocu UPGRADED Ownership Kick" then
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot then
+                    ownershipKickActive = false
+                    return
+                end
+                local savedPos = myRoot.CFrame
+                local dragging = false
+                local grabStartTime = 0
+                local checkStartTime = 0
+                local bodyPos = nil
+                local bodyGyro = nil
+                local function cleanupBodies()
+                    pcall(function()
+                        if bodyPos then bodyPos:Destroy() bodyPos = nil end
+                        if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+                    end)
+                end
+                local function createBodies(targetRoot, pos)
+                    cleanupBodies()
+                    for _, v in pairs(targetRoot:GetChildren()) do
+                        if v:IsA("BodyPosition") or v:IsA("BodyGyro") then v:Destroy() end
+                    end
+                    bodyPos = Instance.new("BodyPosition")
+                    bodyPos.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                    bodyPos.D = 500
+                    bodyPos.P = 100000
+                    bodyPos.Position = pos
+                    bodyPos.Parent = targetRoot
+                    bodyGyro = Instance.new("BodyGyro")
+                    bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+                    bodyGyro.D = 500
+                    bodyGyro.P = 100000
+                    bodyGyro.CFrame = CFrame.new(pos)
+                    bodyGyro.Parent = targetRoot
+                end
+
+                while ownershipKickActive do
+                    local currentTargetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+                    local currentTarget = currentTargetName and Players:FindFirstChild(currentTargetName)
+                    if not currentTarget or not currentTarget.Character or not currentTarget.Parent then
+                        cleanupBodies()
+                        break
+                    end
+                    myChar = LocalPlayer.Character
+                    myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    local tChar = currentTarget.Character
+                    local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                    local tHum = tChar and tChar:FindFirstChild("Humanoid")
+                    if tRoot and tHum and tHum.Health > 0 and myRoot then
+                        if not dragging then
+                            myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 3)
+                            cleanupBodies()
+                            checkStartTime = 0
+                            pcall(function()
+                                tHum.PlatformStand = true
+                                tHum.Sit = true
+                                SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                                SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                                DestroyGrabLine:FireServer(tRoot)
+                            end)
+                            myRoot.AssemblyLinearVelocity = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            if grabStartTime == 0 then grabStartTime = tick() end
+                            if tick() - grabStartTime > 0.2 then
+                                dragging = true
+                                grabStartTime = 0
+                                checkStartTime = tick()
+                                local lockPos = savedPos * CFrame.new(5, 20, 4)
+                                createBodies(tRoot, lockPos.Position)
+                            end
+                        else
+                            myRoot.CFrame = savedPos
+                            local lockPos = savedPos * CFrame.new(5, 20, 4)
+                            myRoot.AssemblyLinearVelocity = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            if bodyPos and bodyPos.Parent then
+                                bodyPos.Position = lockPos.Position
+                                if bodyGyro then bodyGyro.CFrame = lockPos end
+                            else
+                                createBodies(tRoot, lockPos.Position)
+                            end
+                            tHum.PlatformStand = true
+                            pcall(function()
+                                for i = 1, 4 do SetNetOwner:FireServer(tRoot, lockPos) end
+                                DestroyGrabLine:FireServer(tRoot)
+                            end)
+                            if checkStartTime > 0 and tick() - checkStartTime > 0.2 then
+                                local currentDist = (tRoot.Position - lockPos.Position).Magnitude
+                                if currentDist > 15 then
+                                    dragging = false
+                                    grabStartTime = 0
+                                    checkStartTime = 0
+                                    cleanupBodies()
+                                    myRoot.CFrame = tRoot.CFrame * CFrame.new(0, 0, 3)
+                                else
+                                    checkStartTime = tick()
+                                end
+                            end
+                        end
+                    else
+                        dragging = false
+                        grabStartTime = 0
+                        checkStartTime = 0
+                        cleanupBodies()
+                    end
+                    RunService.Heartbeat:Wait()
+                end
+                cleanupBodies()
+                if myRoot then myRoot.CFrame = savedPos end
+
+            elseif mode == "Ownership Kick fast" then
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot then
+                    ownershipKickActive = false
+                    return
+                end
+                local savedPos = myRoot.CFrame
+                local isGrabbing = false
+                local startTime = nil
+                local lastPalletTime = 0
+                local checkStartTime = nil
+                local grabAttemptStartTime = nil
+                local currentTargetRoot = nil
+                local attachments = {}
+
+                local spawnTask = task.spawn(function()
+                    while ownershipKickActive and target and target.Parent do
+                        local tChar = target.Character
+                        local tRootActual = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                        if tRootActual then
+                            pcall(function()
+                                SetNetOwner:FireServer(tRootActual, tRootActual.CFrame)
+                                tRootActual.AssemblyLinearVelocity = ZERO_VECTOR
+                                tRootActual.AssemblyAngularVelocity = ZERO_VECTOR
+                            end)
+                        end
+                        task.wait(0.02)
+                    end
+                end)
+                table.insert(ownershipKickConnections, spawnTask)
+
+                local function cleanupPhysicsObjects()
+                    isGrabbing = false
+                    currentTargetRoot = nil
+                    for _, v in pairs(attachments) do
+                        if v then pcall(function() v:Destroy() end) end
+                    end
+                    attachments = {}
+                end
+
+                local function isTargetAlive()
+                    if not target or not target.Parent then return false end
+                    local c = target.Character
+                    if not c then return false end
+                    local hum = c:FindFirstChild("Humanoid")
+                    if not hum or hum.Health <= 0 then return false end
+                    local root = c:FindFirstChild("HumanoidRootPart")
+                    if not root then return false end
+                    if root ~= currentTargetRoot then currentTargetRoot = root end
+                    return true
+                end
+
+                local MyToys = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+                local pallet = MyToys and MyToys:FindFirstChild("PalletLightBrown")
+                if not pallet and LocalPlayer.CanSpawnToy.Value then
+                    pcall(function()
+                        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("PalletLightBrown", HIDDEN_CF, Vector3.new(0, -90, 0))
+                    end)
+                    task.wait(0.5)
+                    MyToys = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+                    pallet = MyToys and MyToys:FindFirstChild("PalletLightBrown")
+                end
+                local soundPart = pallet and pallet:FindFirstChild("SoundPart")
+                if not soundPart then
+                    ownershipKickActive = false
+                    return
+                end
+
+                while ownershipKickActive and target do
+                    RunService.Stepped:Wait()
+                    if not isTargetAlive() then
+                        cleanupPhysicsObjects()
+                        local waitStart = tick()
+                        while ownershipKickActive and target and tick() - waitStart < 0.5 do
+                            if isTargetAlive() then break end
+                            task.wait(0.1)
+                        end
+                        if not isTargetAlive() then
+                            savedPos = myRoot.CFrame
+                            startTime = nil
+                            grabAttemptStartTime = nil
+                            checkStartTime = nil
+                        end
+                        task.wait(0.1)
+                        continue
+                    end
+                    myChar = LocalPlayer.Character
+                    myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    if not myRoot then task.wait() continue end
+                    local tChar = target.Character
+                    local tHum = tChar and tChar:FindFirstChild("Humanoid")
+                    local tRoot = currentTargetRoot
+                    if tRoot then
+                        pcall(function()
+                            SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                            DestroyGrabLine:FireServer(tRoot)
+                        end)
+                        local limbs = {"Left Leg","Right Leg","Left Arm","Right Arm","Head","Torso","UpperTorso","LowerTorso"}
+                        for _, limbName in ipairs(limbs) do
+                            local part = tChar:FindFirstChild(limbName)
+                            if part then part.Velocity = ZERO_VECTOR part.RotVelocity = ZERO_VECTOR part.CanCollide = false end
+                        end
+                    end
+                    if not isGrabbing then
+                        myRoot.CFrame = tRoot.CFrame * CFrame.new(0, -6, -10)
+                        myRoot.Velocity = ZERO_VECTOR
+                        if not grabAttemptStartTime then grabAttemptStartTime = tick() end
+                        tHum.PlatformStand = true
+                        tHum.Sit = false
+                        if not startTime then startTime = tick() end
+                        if tick() - startTime > 0.05 then
+                            isGrabbing = true
+                            startTime = nil
+                            grabAttemptStartTime = nil
+                            myRoot.CFrame = savedPos
+                            myRoot.Velocity = ZERO_VECTOR
+                            local att0 = Instance.new("Attachment", tRoot)
+                            local att1 = Instance.new("Attachment", myRoot)
+                            att1.CFrame = CFrame.new(0, 12, 0)
+                            local ap = Instance.new("AlignPosition", tRoot)
+                            ap.Attachment0 = att0 ap.Attachment1 = att1
+                            ap.MaxForce = math.huge ap.MaxVelocity = math.huge
+                            ap.Responsiveness = 200 ap.ApplyAtCenterOfMass = true
+                            local ao = Instance.new("AlignOrientation", tRoot)
+                            ao.Attachment0 = att0 ao.Attachment1 = att1
+                            ao.MaxTorque = math.huge ao.Responsiveness = 200
+                            attachments.att0 = att0 attachments.att1 = att1
+                            attachments.ap = ap attachments.ao = ao
+                            tHum:ChangeState(Enum.HumanoidStateType.Physics)
+                        end
+                    else
+                        if attachments.att1 then attachments.att1.CFrame = CFrame.new(0, 16.5, 0) end
+                        if not isTargetAlive() then
+                            cleanupPhysicsObjects()
+                            savedPos = myRoot.CFrame
+                            myRoot.CFrame = savedPos
+                            myRoot.Velocity = ZERO_VECTOR
+                            task.wait(0.1)
+                            continue
+                        end
+                        tRoot = currentTargetRoot
+                        if not checkStartTime then checkStartTime = tick() + 0.25 end
+                        if checkStartTime and tick() >= checkStartTime then
+                            local currentDistance = (myRoot.Position - tRoot.Position).Magnitude
+                            if currentDistance > 29 then
+                                cleanupPhysicsObjects()
+                                isGrabbing = false
+                                startTime = tick()
+                                grabAttemptStartTime = nil
+                                checkStartTime = nil
+                                savedPos = myRoot.CFrame
+                                myRoot.CFrame = tRoot.CFrame * CFrame.new(0, -8, 0)
+                                myRoot.Velocity = ZERO_VECTOR
+                                pcall(function()
+                                    SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                                    DestroyGrabLine:FireServer(tRoot)
+                                end)
+                                task.wait()
+                                continue
+                            end
+                        end
+                        pcall(function()
+                            SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                            DestroyGrabLine:FireServer(tRoot)
+                        end)
+                        local currentTime = tick()
+                        if currentTime - lastPalletTime >= 0.02 then
+                            lastPalletTime = currentTime
+                            soundPart.CFrame = tRoot.CFrame * CFrame.new(0, 2, 0)
+                            pcall(function() SetNetOwner:FireServer(soundPart, soundPart.CFrame) end)
+                            task.wait()
+                            soundPart.CFrame = HIDDEN_CF
+                        end
+                    end
+                    task.wait()
+                end
+                cleanupPhysicsObjects()
+                if myRoot and savedPos then myRoot.CFrame = savedPos end
+
+            elseif mode == "Ownership Kick For Exploiter" then
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot then
+                    ownershipKickActive = false
+                    return
+                end
+                local savedPos = myRoot.CFrame
+                local isGrabbing = false
+                local startTime = nil
+                local lastPalletTime = 0
+                local checkStartTime = nil
+                local grabAttemptStartTime = nil
+                local currentTargetRoot = nil
+                local attachments = {}
+
+                local spawnTask = task.spawn(function()
+                    while ownershipKickActive and target and target.Parent do
+                        local tChar = target.Character
+                        local tRootActual = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                        if tRootActual then
+                            pcall(function()
+                                SetNetOwner:FireServer(tRootActual, tRootActual.CFrame)
+                                tRootActual.AssemblyLinearVelocity = ZERO_VECTOR
+                                tRootActual.AssemblyAngularVelocity = ZERO_VECTOR
+                            end)
+                        end
+                        task.wait(0.011)
+                    end
+                end)
+                table.insert(ownershipKickConnections, spawnTask)
+
+                local function cleanupPhysicsObjects()
+                    isGrabbing = false
+                    currentTargetRoot = nil
+                    for _, v in pairs(attachments) do
+                        if v then pcall(function() v:Destroy() end) end
+                    end
+                    attachments = {}
+                end
+
+                local function isTargetAlive()
+                    if not target or not target.Parent then return false end
+                    local c = target.Character
+                    if not c then return false end
+                    local hum = c:FindFirstChild("Humanoid")
+                    if not hum or hum.Health <= 0 then return false end
+                    local root = c:FindFirstChild("HumanoidRootPart")
+                    if not root then return false end
+                    if root ~= currentTargetRoot then currentTargetRoot = root end
+                    return true
+                end
+
+                local MyToys = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+                local pallet = MyToys and MyToys:FindFirstChild("PalletLightBrown")
+                if not pallet and LocalPlayer.CanSpawnToy.Value then
+                    pcall(function()
+                        ReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("PalletLightBrown", HIDDEN_CF, Vector3.new(0, -90, 0))
+                    end)
+                    task.wait(0.5)
+                    MyToys = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+                    pallet = MyToys and MyToys:FindFirstChild("PalletLightBrown")
+                end
+                local soundPart = pallet and pallet:FindFirstChild("SoundPart")
+                if not soundPart then
+                    ownershipKickActive = false
+                    return
+                end
+
+                while ownershipKickActive and target do
+                    task.wait(0.0010416666666667)
+                    if not isTargetAlive() then
+                        cleanupPhysicsObjects()
+                        local waitStart = tick()
+                        while ownershipKickActive and target and tick() - waitStart < 0.5 do
+                            if isTargetAlive() then break end
+                            task.wait(0.1)
+                        end
+                        if not isTargetAlive() then
+                            savedPos = myRoot.CFrame
+                            startTime = nil
+                            grabAttemptStartTime = nil
+                            checkStartTime = nil
+                        end
+                        task.wait(0.1)
+                        continue
+                    end
+                    myChar = LocalPlayer.Character
+                    myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    if not myRoot then task.wait() continue end
+                    local tChar = target.Character
+                    local tHum = tChar and tChar:FindFirstChild("Humanoid")
+                    local tRoot = currentTargetRoot
+                    if tRoot then
+                        pcall(function()
+                            SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                            RunService.Stepped:Wait(0)
+                            DestroyGrabLine:FireServer(tRoot)
+                        end)
+                        local limbs = {"Left Leg","Right Leg","Left Arm","Right Arm","Head","Torso","UpperTorso","LowerTorso"}
+                        for _, limbName in ipairs(limbs) do
+                            local part = tChar:FindFirstChild(limbName)
+                            if part then part.Velocity = ZERO_VECTOR part.RotVelocity = ZERO_VECTOR part.CanCollide = false end
+                        end
+                    end
+                    if not isGrabbing then
+                        myRoot.CFrame = tRoot.CFrame * CFrame.new(0, -6, -10)
+                        myRoot.Velocity = ZERO_VECTOR
+                        if not grabAttemptStartTime then grabAttemptStartTime = tick() end
+                        tHum.PlatformStand = true
+                        tHum.Sit = false
+                        if not startTime then startTime = tick() end
+                        if tick() - startTime > 0.15 then
+                            isGrabbing = true
+                            startTime = nil
+                            grabAttemptStartTime = nil
+                            myRoot.CFrame = savedPos
+                            myRoot.Velocity = ZERO_VECTOR
+                            local att0 = Instance.new("Attachment", tRoot)
+                            local att1 = Instance.new("Attachment", myRoot)
+                            att1.CFrame = CFrame.new(0, 12, 0)
+                            local ap = Instance.new("AlignPosition", tRoot)
+                            ap.Attachment0 = att0 ap.Attachment1 = att1
+                            ap.MaxForce = math.huge ap.MaxVelocity = math.huge
+                            ap.Responsiveness = 400 ap.ApplyAtCenterOfMass = true
+                            local ao = Instance.new("AlignOrientation", tRoot)
+                            ao.Attachment0 = att0 ao.Attachment1 = att1
+                            ao.MaxTorque = math.huge ao.Responsiveness = 400
+                            attachments.att0 = att0 attachments.att1 = att1
+                            attachments.ap = ap attachments.ao = ao
+                            tHum:ChangeState(Enum.HumanoidStateType.Physics)
+                        end
+                    else
+                        if attachments.att1 then attachments.att1.CFrame = CFrame.new(0, 16.5, 0) end
+                        if not isTargetAlive() then
+                            cleanupPhysicsObjects()
+                            savedPos = myRoot.CFrame
+                            myRoot.CFrame = savedPos
+                            myRoot.Velocity = ZERO_VECTOR
+                            task.wait(0.1)
+                            continue
+                        end
+                        tRoot = currentTargetRoot
+                        if not checkStartTime then checkStartTime = tick() + 0.25 end
+                        if checkStartTime and tick() >= checkStartTime then
+                            local currentDistance = (myRoot.Position - tRoot.Position).Magnitude
+                            if currentDistance > 29 then
+                                cleanupPhysicsObjects()
+                                isGrabbing = false
+                                startTime = tick()
+                                grabAttemptStartTime = nil
+                                checkStartTime = nil
+                                savedPos = myRoot.CFrame
+                                myRoot.CFrame = tRoot.CFrame * CFrame.new(0, -8, 0)
+                                myRoot.Velocity = ZERO_VECTOR
+                                pcall(function()
+                                    SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                                    DestroyGrabLine:FireServer(tRoot)
+                                end)
+                                task.wait()
+                                continue
+                            end
+                        end
+                        pcall(function()
+                            SetNetOwner:FireServer(tRoot, tRoot.CFrame)
+                            DestroyGrabLine:FireServer(tRoot)
+                        end)
+                        local currentTime = tick()
+                        if currentTime - lastPalletTime >= 0.01 then
+                            lastPalletTime = currentTime
+                            soundPart.CFrame = tRoot.CFrame * CFrame.new(0, 2, 0)
+                            pcall(function() SetNetOwner:FireServer(soundPart, soundPart.CFrame) end)
+                            task.wait()
+                            soundPart.CFrame = HIDDEN_CF
+                        end
+                    end
+                    task.wait()
+                end
+                cleanupPhysicsObjects()
+                if myRoot and savedPos then myRoot.CFrame = savedPos end
+            end
+        end)
+
+        return function()
+            ownershipKickActive = false
+            for _, conn in ipairs(ownershipKickConnections) do
+                pcall(function() conn:Disconnect() end)
+            end
+            ownershipKickConnections = {}
+            if task_handle then
+                task.cancel(task_handle)
+            end
+            pcall(function()
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local root = LocalPlayer.Character.HumanoidRootPart
+                    root.Anchored = false
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                end
+            end)
+        end
+    end
+
+    local currentOwnershipCleanups = {}
+
+    local function setupModeToggle(name, mode)
+        DriftKickGroup:AddToggle("OwnershipKick_" .. mode:gsub("[^%w]", "_"), {
+            Text = name,
+            Default = false,
+            Callback = function(Value)
+                if Value then
+                    for _, cleanup in pairs(currentOwnershipCleanups) do
+                        pcall(cleanup)
+                    end
+                    currentOwnershipCleanups = {}
+
+                    local cleanup = runOwnershipKick(mode)
+                    if cleanup then
+                        currentOwnershipCleanups[mode] = cleanup
+                    end
+                else
+                    if currentOwnershipCleanups[mode] then
+                        currentOwnershipCleanups[mode]()
+                        currentOwnershipCleanups[mode] = nil
+                    end
+                end
+            end
+        })
+    end
+
+    setupModeToggle("Xocu Ownership Kick(80+ fps)", "Xocu Ownership Kick(80+ fps)")
+    setupModeToggle("Ownership Kick fast", "Ownership Kick fast")
+    setupModeToggle("Ownership Kick For Exploiter", "Ownership Kick For Exploiter")
+    setupModeToggle("Xocu UPGRADED Ownership Kick", "Xocu UPGRADED Ownership Kick")
+
+    -- ===== Loop Kick Blob — 元コードそのまま =====
+    do
+        local blobActive = false
+        local blobTask = nil
+        local blobConnections = {}
+
+        local function cleanupBlob()
+            for _, conn in ipairs(blobConnections) do
+                pcall(function() conn:Disconnect() end)
+            end
+            blobConnections = {}
+            if blobTask then
+                task.cancel(blobTask)
+                blobTask = nil
+            end
+            blobActive = false
+        end
+
+        DriftKickGroup:AddToggle("LoopKickBlobToggle", {
+            Text = "Loop Kick Blob",
+            Default = false,
+            Callback = function(State)
+                if not State then
+                    cleanupBlob()
+                    return
+                end
+
+                if blobActive then
+                    cleanupBlob()
+                end
+
+                blobActive = State
+
+                local targetName = selectedPlrName or (selectedKickPlayer and selectedKickPlayer.Name)
+                if not targetName or targetName == "" then
+                    Library:Notify({ Title = "Error", Description = "Select target first!", Time = 3 })
+                    blobActive = false
+                    return
+                end
+
+                blobTask = task.spawn(function()
+                    local Players = game:GetService("Players")
+                    local RS = game:GetService("ReplicatedStorage")
+                    local RunService = game:GetService("RunService")
+                    local LocalPlayer = Players.LocalPlayer
+                    local GE = RS:WaitForChild("GrabEvents")
+
+                    local REMOTE_DELAY = 0.002
+                    local lastRemote = 0
+                    local blobLoop = true
+
+                    local function BlobGrabKickHard()
+                        local target = Players:FindFirstChild(targetName)
+                        if not target then
+                            warn("Target not found")
+                            blobActive = false
+                            return
+                        end
+
+                        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                        local hum = char:WaitForChild("Humanoid")
+                        local seat = hum.SeatPart
+                        if not seat or seat.Parent.Name ~= "CreatureBlobman" then
+                            Library:Notify({ Title = "Error", Description = "Sit on Blobman first!", Time = 3 })
+                            blobActive = false
+                            return
+                        end
+
+                        local blob = seat.Parent
+                        local blobRoot = blob:FindFirstChild("HumanoidRootPart") or blob.PrimaryPart
+                        local scriptObj = blob:WaitForChild("BlobmanSeatAndOwnerScript")
+                        local CG = scriptObj:WaitForChild("CreatureGrab")
+                        local CD = scriptObj:WaitForChild("CreatureDrop")
+
+                        local R_Det = blob:WaitForChild("RightDetector")
+
+                        local savedPos = blobRoot.CFrame
+                        local dragging = false
+                        local grabStartTime = 0
+
+                        while blobLoop and blobActive do
+                            local currentTarget = Players:FindFirstChild(targetName)
+                            if not currentTarget then break end
+
+                            char = LocalPlayer.Character
+                            hum = char and char:FindFirstChild("Humanoid")
+                            seat = hum and hum.SeatPart
+                            if not seat or seat.Parent.Name ~= "CreatureBlobman" then
+                                warn("Stopped: left Blobman")
+                                break
+                            end
+
+                            blob = seat.Parent
+                            blobRoot = blob:FindFirstChild("HumanoidRootPart") or blob.PrimaryPart
+
+                            local tChar = currentTarget.Character
+                            local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                            local tHum = tChar and tChar:FindFirstChild("Humanoid")
+
+                            if tRoot and tHum and tHum.Health > 0 and blobRoot then
+                                tRoot.Velocity = Vector3.zero
+
+                                if not dragging then
+                                    blobRoot.CFrame = tRoot.CFrame
+                                    blobRoot.Velocity = Vector3.zero
+
+                                    if tick() - lastRemote >= REMOTE_DELAY then
+                                        lastRemote = tick()
+
+                                        pcall(function()
+                                            tHum.PlatformStand = true
+                                            tHum.Sit = true
+                                            GE.SetNetworkOwner:FireServer(tRoot, blobRoot.CFrame)
+                                            GE.DestroyGrabLine:FireServer(tRoot)
+                                        end)
+                                    end
+
+                                    if grabStartTime == 0 then
+                                        grabStartTime = tick()
+                                    end
+
+                                    if tick() - grabStartTime > 0.35 then
+                                        dragging = true
+                                        grabStartTime = 0
+                                        blobRoot.CFrame = savedPos
+                                        blobRoot.Velocity = Vector3.zero
+                                    end
+                                else
+                                    blobRoot.CFrame = savedPos
+                                    blobRoot.Velocity = Vector3.zero
+
+                                    local lockPos = savedPos * CFrame.new(0, 23, 0)
+                                    tRoot.CFrame = lockPos
+                                    tHum.PlatformStand = true
+                                    tHum.Sit = true
+
+                                    if tick() - lastRemote >= REMOTE_DELAY then
+                                        lastRemote = tick()
+
+                                        pcall(function()
+                                            GE.SetNetworkOwner:FireServer(tRoot, lockPos)
+                                            GE.DestroyGrabLine:FireServer(tRoot)
+
+                                            local weld = R_Det:FindFirstChild("RightWeld") or R_Det:FindFirstChildWhichIsA("Weld")
+                                            if weld then
+                                                CD:FireServer(weld)
+                                                CG:FireServer(R_Det, tRoot, weld)
+                                            end
+                                        end)
+                                    end
+                                end
+                            else
+                                dragging = false
+                                grabStartTime = 0
+                            end
+
+                            RunService.Heartbeat:Wait()
+                        end
+
+                        if blobRoot then
+                            blobRoot.CFrame = savedPos
+                            blobRoot.Velocity = Vector3.zero
+                        end
+                    end
+
+                    task.spawn(BlobGrabKickHard)
+                end)
+            end
+        })
+    end
+end
 
 -- ============================================================
 -- Ragdoll Kill (前回と同じ)
@@ -840,7 +2028,7 @@ function stopLoopLocal()
 end
 
 RagdollGroup:AddToggle("RagdollKill", {
-    Text = "Ragdoll Kill",
+    Text = "Pen Kill",
     Default = false,
     Callback = function(v)
         if v then
