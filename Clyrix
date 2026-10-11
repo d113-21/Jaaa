@@ -9,6 +9,7 @@ local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))
 local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
 local Options = Library.Options
 local Toggles = Library.Toggles
+local Library_Global = Library
 -- =====================================================
 -- 通知サイズ統一ヘルパー
 -- =====================================================
