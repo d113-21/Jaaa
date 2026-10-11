@@ -5942,6 +5942,100 @@ EspGroup:AddSlider("EspBaseSize", { Text = "Base Size", Default = 10, Min = 1, M
         for _, data in pairs(espData) do data.BaseSize = Value end
     end })
 
+-- =====================================================
+-- PCLD ESP (ESP Groupbox 内)
+-- =====================================================
+local TweenService_PCLD = game:GetService("TweenService")
+local PCLD_COLOR = Color3.fromRGB(255, 255, 255)
+local PCLD_TRANSPARENCY = 0.7
+local SB_COLOR = Color3.fromRGB(255, 255, 255)
+local PCLDEnabled = false
+
+local function ApplyClonedPCLD(clonedPCLD)
+    if PCLDEnabled then
+        clonedPCLD.Transparency = PCLD_TRANSPARENCY
+        clonedPCLD.Color = PCLD_COLOR
+        local selectionBox = clonedPCLD:FindFirstChild("SelectionBox")
+        if not selectionBox then
+            selectionBox = Instance.new("SelectionBox")
+            selectionBox.Adornee = clonedPCLD
+            selectionBox.Parent = clonedPCLD
+        end
+        selectionBox.Color3 = SB_COLOR
+        selectionBox.LineThickness = 0.01
+    else
+        clonedPCLD.Transparency = 1
+        local selectionBox = clonedPCLD:FindFirstChild("SelectionBox")
+        if selectionBox then
+            selectionBox:Destroy()
+        end
+    end
+end
+
+local function UpdatePCLD(parent)
+    if parent.Name ~= "PlayerCharacterLocationDetector" then return end
+    task.spawn(function()
+        if parent.Position == Vector3.zero then
+            while parent and parent.Position == Vector3.zero do
+                task.wait()
+            end
+        end
+        if not parent.Parent then return end
+        local clonedPCLD = parent:FindFirstChild("ClonedPCLD")
+        if PCLDEnabled and not clonedPCLD then
+            clonedPCLD = parent:Clone()
+            clonedPCLD.Name = "ClonedPCLD"
+            clonedPCLD.Material = Enum.Material.Neon
+            clonedPCLD.Parent = parent
+            parent:GetPropertyChangedSignal("CFrame"):Connect(function()
+                if not clonedPCLD.Parent then return end
+                TweenService_PCLD:Create(
+                    clonedPCLD,
+                    TweenInfo.new(0.15, Enum.EasingStyle.Linear),
+                    { CFrame = parent.CFrame }
+                ):Play()
+            end)
+        end
+        if clonedPCLD then
+            ApplyClonedPCLD(clonedPCLD)
+        end
+    end)
+end
+
+local function UpdateAllPCLD()
+    for _, v in ipairs(Workspace:GetChildren()) do
+        UpdatePCLD(v)
+    end
+end
+
+Workspace.ChildAdded:Connect(function(child)
+    if PCLDEnabled then
+        UpdatePCLD(child)
+    end
+end)
+
+EspGroup:AddToggle("PCLDViewToggle", {
+    Text = "PCLD View",
+    Default = false,
+    Callback = function(value)
+        PCLDEnabled = value
+        if value then
+            UpdateAllPCLD()
+        else
+            for _, v in ipairs(Workspace:GetChildren()) do
+                if v.Name == "PlayerCharacterLocationDetector" then
+                    local clone = v:FindFirstChild("ClonedPCLD")
+                    if clone then
+                        clone.Transparency = 1
+                        local sb = clone:FindFirstChild("SelectionBox")
+                        if sb then sb:Destroy() end
+                    end
+                end
+            end
+        end
+    end,
+})
+
 task.spawn(function()
     local accumulatedTime = 0
     RunService.RenderStepped:Connect(function(dt)
@@ -6007,31 +6101,6 @@ local BHK_Textures = {
         assetId = "rbxassetid://8777548884",
         display = "blackhole3",
         image = "rbxassetid://8777548884",
-    },
-    blackhole4 = {
-        assetId = "rbxassetid://16081893047",
-        display = "blackhole4",
-        image = "rbxassetid://16081893047",
-    },
-    blackhole5 = {
-        assetId = "rbxassetid://16081893047",
-        display = "blackhole5",
-        image = "rbxassetid://16081893047",
-    },
-    blackhole6 = {
-        assetId = "rbxassetid://3097686631",
-        display = "blackhole6",
-        image = "rbxassetid://3097686631",
-    },
-    blackhole7 = {
-        assetId = "rbxassetid://7874817761",
-        display = "blackhole7",
-        image = "rbxassetid://7874817761",
-    },
-    blackhole8 = {
-        assetId = "rbxassetid://91546602453505",
-        display = "blackhole8",
-        image = "rbxassetid://91546602453505",
     },
 }
 
@@ -6114,7 +6183,7 @@ end
 
 BlackHoleGroup:AddDropdown("BlackHoleTextureSelect", {
     Text = "テクスチャ選択",
-    Values = { "blackhole1", "blackhole2", "blackhole3", "blackhole4", "blackhole5", "blackhole6", "blackhole7", "blackhole8" },
+    Values = { "blackhole1", "blackhole2", "blackhole3" },
     Default = "blackhole1",
     Callback = function(v)
         BHK_Master.selectedTexture = v
