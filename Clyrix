@@ -9,7 +9,17 @@ local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))
 local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
 local Options = Library.Options
 local Toggles = Library.Toggles
-
+-- =====================================================
+-- 通知サイズ統一ヘルパー
+-- =====================================================
+local NOTIFY_MIN_LINES = 4  -- 全通知を最低4行に揃える
+local function ClyrixNotify(title, description, time)
+    Library:Notify({
+        Title = title,
+        Description = description,
+        Time = time or 5,
+    })
+end
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
@@ -3929,19 +3939,13 @@ if LineCreateGrabLine then
             if LineLagCFG.lastLineLagger ~= plr then
                 LineLagCFG.lastLineLagger = plr
 
-                local notifyText = "Line Lag Detected"
-                    .. "\nPlayer: " .. plr.DisplayName .. " (" .. plr.Name .. ")"
-                    .. "\nPart: " .. tostring(arg2)
-                    .. "\nCFrame: ("
-                        .. math.round(arg3.Position.X) .. ", "
-                        .. math.round(arg3.Position.Y) .. ", "
-                        .. math.round(arg3.Position.Z) .. ")"
+                local notifyText = "Player: " .. plr.DisplayName .. " (" .. plr.Name .. ")"
+                .. "\nCFrame: ("
+                    .. math.round(arg3.Position.X) .. ", "
+                    .. math.round(arg3.Position.Y) .. ", "
+                    .. math.round(arg3.Position.Z) .. ")"
 
-                Library:Notify({
-                    Title = "⚠ Line Lag Detected",
-                    Description = notifyText,
-                    Time = LineLagCFG.notifyTime,
-                })
+                ClyrixNotify("⚠ Line Lag Detected", notifyText, LineLagCFG.notifyTime)
             end
 
             task.wait(LineLagCFG.timeOut and 3.3 or 0)
@@ -3966,6 +3970,111 @@ LineNotifyGroup:AddSlider("LineLagNotifyTime", {
         LineLagCFG.notifyTime = v
     end,
 })
+-- =====================================================
+-- 通知タブ: Kick通知
+-- =====================================================
+local KickNotifyGroup = Tabs.Notify:AddLeftGroupbox("Kick通知")
+
+local KickNotifyState = {
+    enabled = false,
+    watcherConn = nil,
+    lastKickLabel = nil,
+}
+
+local KICK_WATCHED_NAMES = {
+    ["BlackHoleKick"] = true,
+    ["BlackHoleDetected"] = true,
+}
+
+local KICK_SOUND_ID = "rbxassetid://2865227271"
+local KICK_SOUND_VOLUME = 0.5
+
+local function kickPlaySound()
+    local s = Instance.new("Sound")
+    s.SoundId = KICK_SOUND_ID
+    s.Volume = KICK_SOUND_VOLUME
+    s.PlayOnRemove = true
+    s.Parent = game:GetService("SoundService")
+    s:Destroy()
+end
+
+local function kickGetClosestPlayer(pos)
+    local closestPlr = nil
+    local closestDist = math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local dist = (hrp.Position - pos).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closestPlr = plr
+                end
+            end
+        end
+    end
+    return closestPlr
+end
+
+local function kickStartWatcher()
+    if KickNotifyState.watcherConn then
+        pcall(function() KickNotifyState.watcherConn:Disconnect() end)
+        KickNotifyState.watcherConn = nil
+    end
+    KickNotifyState.watcherConn = Workspace.ChildAdded:Connect(function(obj)
+        if not KickNotifyState.enabled then return end
+        if not KICK_WATCHED_NAMES[obj.Name] then return end
+        task.wait(0.05)
+        local pos
+        if obj:IsA("BasePart") then
+            pos = obj.Position
+        elseif obj:IsA("Model") and obj.PrimaryPart then
+            pos = obj.PrimaryPart.Position
+        end
+        if not pos then return end
+        local plr = kickGetClosestPlayer(pos)
+        if not plr then return end
+        kickPlaySound()
+        ClyrixNotify("KickNotify",
+            "Player: " .. plr.DisplayName .. " (" .. plr.Name .. ")"
+            .. "\nKicked!",
+        6)
+        if KickNotifyState.lastKickLabel and KickNotifyState.lastKickLabel.SetText then
+            pcall(function()
+                KickNotifyState.lastKickLabel:SetText("Last kick: " .. plr.DisplayName)
+            end)
+        end
+    end)
+end
+
+local function kickStopWatcher()
+    if KickNotifyState.watcherConn then
+        pcall(function() KickNotifyState.watcherConn:Disconnect() end)
+        KickNotifyState.watcherConn = nil
+    end
+end
+
+KickNotifyGroup:AddToggle("KickNotifyToggle", {
+    Text = "Kick Notify",
+    Default = false,
+    Callback = function(v)
+        KickNotifyState.enabled = v
+        if v then
+            kickStartWatcher()
+        else
+            kickStopWatcher()
+        end
+    end,
+})
+
+KickNotifyState.lastKickLabel = KickNotifyGroup:AddLabel("Last kick: —")
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if KickNotifyState.enabled then
+        task.wait(0.5)
+        kickStartWatcher()
+    end
+end)
 
 -- =====================================================
 -- Server タブ: HOUSE (Plot Breaker)
