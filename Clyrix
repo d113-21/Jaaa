@@ -43,7 +43,7 @@ _G.toggles = Toggles
 -- =====================================================
 local Window = Library:CreateWindow({
     Title = "Clyrix",
-    Footer = "Clyrix hvh only",
+    Footer = "Clyrix Made By tmmutekitou2",
     Icon = 94028363129362,
     Center = true,
     AutoShow = true,
@@ -54,18 +54,16 @@ local Window = Library:CreateWindow({
 })
 
 local Tabs = {
-    Main = Window:AddTab("Main", "star"),
+    Main = Window:AddTab("Main", "code"),
     Defence = Window:AddTab("Defence", "shield"),
     Target = Window:AddTab("Target", "target"),
     Player = Window:AddTab("Player", "user"),
     Server = Window:AddTab("Server", "server"),
     Whitelist = Window:AddTab("Whitelist", "user-check"),
-    Notify = Window:AddTab("通知", "bell"),
+    Notify = Window:AddTab("Notify", "bell"),
     Visuals = Window:AddTab("Visuals", "eye"),
-    Dev = Window:AddTab("Dev", "users"),
     UISettings = Window:AddTab("UI Settings", "settings"),
 }
-
 -- =====================================================
 -- ★ Target タブ: Target + ドリフトキック調節 + Ragdoll Kill + ドリフトキック
 -- =====================================================
@@ -6237,9 +6235,6 @@ task.spawn(function()
         pcall(tryInject)
     end
 end)
-
-local DevTestGroup = Tabs.Dev:AddLeftGroupbox("Test", "user")
-DevTestGroup:AddLabel("Hello")
 
 -- =====================================================
 -- UI Settings
