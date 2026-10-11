@@ -1,0 +1,1394 @@
+-- Music Player (Text symbols + Free resize)
+
+local Players = game:GetService("Players")
+local SoundService = game:GetService("SoundService")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- 前方宣言
+local resizeHandle
+
+-- ============================================================
+-- 記号
+-- ============================================================
+local SYM_CLOSE    = "✕"
+local SYM_REWIND   = "«"
+local SYM_FORWARD  = "»"
+local SYM_RESIZE   = "◢"
+local SEEK_SECONDS = 5
+
+-- ============================================================
+-- ★ 曲リスト ★
+-- ============================================================
+local Songs = {
+    { Name = "No.1",         Asset = "https://github.com/d113-21/Jaaa/blob/main/No.1.mp3" },
+    { Name = "No.2",         Asset = "https://github.com/d113-21/Jaaa/blob/main/No.2.mp3" },
+    { Name = "No.3",         Asset = "https://github.com/d113-21/Jaaa/blob/main/No.3.mp3" },
+    { Name = "Trackmaker",   Asset = "https://github.com/d113-21/Jaaa/blob/main/Trackmaker.mp3" },
+}
+
+-- ============================================================
+-- テーマ
+-- ============================================================
+local Theme = {
+    Bg          = Color3.fromRGB(35, 15, 60),
+    Surface     = Color3.fromRGB(80, 45, 130),
+    SurfaceAlt  = Color3.fromRGB(50, 25, 85),
+    Accent      = Color3.fromRGB(180, 130, 240),
+    AccentDim   = Color3.fromRGB(140, 90, 200),
+    Selected    = Color3.fromRGB(100, 60, 150),
+    Text        = Color3.fromRGB(235, 235, 235),
+    TextDim     = Color3.fromRGB(180, 160, 210),
+    Outline     = Color3.fromRGB(60, 30, 100),
+    Snow        = Color3.fromRGB(240, 235, 255),
+    Danger      = Color3.fromRGB(255, 100, 100),
+    Font        = Enum.Font.Gotham,
+    FontBold    = Enum.Font.GothamBold,
+}
+
+local BORDER_CORNER = 8
+
+-- ============================================================
+-- サイズ定数
+-- ============================================================
+local WIDTH          = 200
+local MAIN_HEIGHT    = 140
+local LIST_EXPAND_H  = 150
+
+local MIN_W, MIN_H   = 140, 100
+local MAX_W, MAX_H   = 500, 400
+
+local Y_HEADER       = 28
+local Y_TOP_ROW      = 6
+local TOP_ROW_H      = 20
+local Y_LIST_TOP     = Y_HEADER + Y_TOP_ROW + TOP_ROW_H + 6
+local Y_LIST_LABEL_H = 16
+local Y_TIME_H       = 18
+local Y_NOWPLAY_H    = 16
+local Y_BOTTOM_OFF   = 18
+local BOTTOM_ROW_H   = 32
+
+local TWEEN_INFO  = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local ICON_SIZE   = 20
+local BAR_W       = 4
+local BAR_H       = 18
+local BAR_GAP     = 4
+
+-- ============================================================
+-- State
+-- ============================================================
+local State = {
+    Sound = nil,
+    Volume = 2,
+    SelectedIndex = 0,
+    PlayingIndex = 0,
+    LoadingId = 0,
+    IsPaused = false,
+    IsLoading = false,
+    ListExpanded = false,
+    Animating = false,
+    CurrentW = WIDTH,
+    CurrentH = MAIN_HEIGHT,
+    NormalHeight = MAIN_HEIGHT,
+    IsMinimized = false,
+}
+
+-- ============================================================
+-- URL/ID 解決
+-- ============================================================
+local function ResolveAssetId(input)
+    if type(input) ~= "string" or input == "" then return nil end
+    local s = input:match("^%s*(.-)%s*$")
+
+    if s:find("github.com", 1, true) and s:find("/blob/", 1, true) then
+        s = s:gsub("github%.com", "raw.githubusercontent.com"):gsub("/blob/", "/")
+    end
+    if s:match("^%d+$") then return "rbxassetid://" .. s end
+    local id = s:match("^rbxassetid://(%d+)$")
+    if id then return "rbxassetid://" .. id end
+    if s:find("roblox.com", 1, true) then
+        local found = s:match("[?&]id=(%d+)") or s:match("/asset/(%d+)") or s:match("/library/(%d+)")
+        if found then return "rbxassetid://" .. found end
+    end
+    if s:match("^https?://") then
+        if not (writefile and getcustomasset) then return nil end
+        local ok, result = pcall(function()
+            local ext = s:match("%.([%w]+)$") or "mp3"
+            if ext ~= "mp3" and ext ~= "ogg" and ext ~= "wav" then ext = "mp3" end
+            local fileName = "Music_" .. HttpService:GenerateGUID(false) .. "." .. ext
+            local data = game:HttpGet(s)
+            if not data or data == "" then error("DL fail") end
+            writefile(fileName, data)
+            local asset = getcustomasset(fileName)
+            task.delay(5, function()
+                if delfile then pcall(delfile, fileName) end
+            end)
+            return asset
+        end)
+        if ok then return result end
+    end
+    return nil
+end
+
+-- ============================================================
+-- 再生処理
+-- ============================================================
+local UI
+
+local function DestroySound()
+    if State.Sound then
+        pcall(function()
+            State.Sound:Stop()
+            State.Sound:Destroy()
+        end)
+        State.Sound = nil
+    end
+    State.PlayingIndex = 0
+    State.IsPaused = false
+    State.IsLoading = false
+    if UI then UI.RefreshList(); UI.UpdatePlayButton(); UI.SetNowPlaying("") end
+end
+
+local function PauseSound()
+    if State.Sound and not State.IsPaused then
+        State.Sound:Pause()
+        State.IsPaused = true
+        if UI then UI.UpdatePlayButton() end
+    end
+end
+
+local function ResumeSound()
+    if State.Sound and State.IsPaused then
+        State.Sound:Resume()
+        State.IsPaused = false
+        if UI then UI.UpdatePlayButton() end
+    end
+end
+
+local function PlayIndex(idx)
+    local entry = Songs[idx]
+    if not entry then return end
+    if entry.Asset == "" then
+        if UI then UI.Notify("曲が未設定です") end
+        return
+    end
+
+    local assetId = ResolveAssetId(entry.Asset)
+    if not assetId then
+        if UI then UI.Notify("アセット解決失敗") end
+        return
+    end
+
+    DestroySound()
+
+    State.IsLoading = true
+    State.PlayingIndex = idx
+    if UI then UI.RefreshList(); UI.UpdatePlayButton(); UI.SetNowPlaying(entry.Name) end
+
+    local sound = Instance.new("Sound")
+    sound.Name = "MusicPlayerSound"
+    sound.SoundId = assetId
+    sound.Volume = State.Volume
+    sound.Looped = true
+    sound.Parent = SoundService
+
+    State.Sound = sound
+    State.IsPaused = false
+    State.LoadingId = State.LoadingId + 1
+    local myId = State.LoadingId
+
+    local loaded = false
+    local conn
+    conn = sound.Loaded:Connect(function()
+        loaded = true
+        if conn then conn:Disconnect() end
+        if State.LoadingId == myId then
+            State.IsLoading = false
+            if UI then UI.UpdatePlayButton() end
+        end
+    end)
+
+    sound:Play()
+
+    task.delay(3, function()
+        if State.LoadingId == myId and State.Sound == sound and not loaded and sound.TimeLength == 0 then
+            State.IsLoading = false
+            if UI then UI.UpdatePlayButton() end
+        end
+    end)
+end
+
+local function PlaySelected()
+    if State.SelectedIndex == 0 then
+        if UI then UI.Notify("曲を選んでください") end
+        return
+    end
+    PlayIndex(State.SelectedIndex)
+end
+
+local function SeekBy(seconds)
+    if State.Sound and State.Sound.TimeLength > 0 then
+        local newPos = State.Sound.TimePosition + seconds
+        newPos = math.clamp(newPos, 0, State.Sound.TimeLength)
+        State.Sound.TimePosition = newPos
+    end
+end
+
+-- ============================================================
+-- ScreenGui
+-- ============================================================
+local gui = Instance.new("ScreenGui")
+gui.Name = "MusicPlayerGui"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 999
+pcall(function()
+    if gethui then gui.Parent = gethui()
+    elseif syn and syn.protect_gui then syn.protect_gui(gui); gui.Parent = game:GetService("CoreGui")
+    else gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+end)
+
+-- メインウィンドウ
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.AnchorPoint = Vector2.new(0.5, 0.5)
+main.Position = UDim2.fromScale(0.5, 0.5)
+main.Size = UDim2.fromOffset(WIDTH, MAIN_HEIGHT)
+main.BackgroundColor3 = Theme.Bg
+main.BorderSizePixel = 0
+main.Active = true
+main.ClipsDescendants = true
+main.Parent = gui
+
+local mainCorner = Instance.new("UICorner", main)
+mainCorner.CornerRadius = UDim.new(0, BORDER_CORNER)
+
+-- 雪レイヤー
+local snowLayer = Instance.new("Frame")
+snowLayer.Name = "SnowLayer"
+snowLayer.BackgroundTransparency = 1
+snowLayer.Size = UDim2.fromScale(1, 1)
+snowLayer.ZIndex = 50
+snowLayer.ClipsDescendants = true
+snowLayer.Parent = main
+
+local snowLayerCorner = Instance.new("UICorner", snowLayer)
+snowLayerCorner.CornerRadius = UDim.new(0, BORDER_CORNER)
+
+-- 外枠
+local mainStroke = Instance.new("UIStroke", main)
+mainStroke.Color = Theme.Outline
+mainStroke.Thickness = 2
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+local strokeGradient = Instance.new("UIGradient", mainStroke)
+strokeGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(60, 30, 100)),
+    ColorSequenceKeypoint.new(0.35, Color3.fromRGB(60, 30, 100)),
+    ColorSequenceKeypoint.new(0.44, Color3.fromRGB(140, 80, 210)),
+    ColorSequenceKeypoint.new(0.50, Color3.fromRGB(230, 170, 255)),
+    ColorSequenceKeypoint.new(0.56, Color3.fromRGB(140, 80, 210)),
+    ColorSequenceKeypoint.new(0.65, Color3.fromRGB(60, 30, 100)),
+    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(60, 30, 100)),
+})
+strokeGradient.Rotation = 0
+strokeGradient.Offset = Vector2.new(0, 0)
+
+task.spawn(function()
+    while main and main.Parent do
+        local t = 0
+        while t <= 1 and main.Parent do
+            strokeGradient.Offset = Vector2.new(t * 2 - 1, 0)
+            t = t + 0.008
+            RunService.RenderStepped:Wait()
+        end
+    end
+end)
+
+-- ============================================================
+-- ★ 音に反応する波形バー（外枠の下端）
+-- ============================================================
+local WAVE_H     = 14
+local WAVE_COUNT = 22
+
+local waveFrame = Instance.new("Frame")
+waveFrame.Name = "Waveform"
+waveFrame.AnchorPoint = Vector2.new(0, 1)
+waveFrame.Position = UDim2.new(0, 4, 1, -2)
+waveFrame.Size = UDim2.new(1, -28, 0, WAVE_H)
+waveFrame.BackgroundTransparency = 1
+waveFrame.ClipsDescendants = true
+waveFrame.ZIndex = 30
+waveFrame.Parent = main
+
+local waveBars = {}
+for i = 1, WAVE_COUNT do
+    local bar = Instance.new("Frame")
+    bar.Name = "Bar" .. i
+    bar.AnchorPoint = Vector2.new(0.5, 1)
+    bar.Position = UDim2.new((i - 0.5) / WAVE_COUNT, 0, 1, 0)
+    bar.Size = UDim2.new(0, 2, 0, 1)
+    bar.BackgroundColor3 = Theme.Accent
+    bar.BackgroundTransparency = 0.2
+    bar.BorderSizePixel = 0
+    bar.ZIndex = 31
+    bar.Parent = waveFrame
+    local bc = Instance.new("UICorner", bar)
+    bc.CornerRadius = UDim.new(1, 0)
+    waveBars[i] = bar
+end
+
+local smoothedLoudness = 0
+task.spawn(function()
+    while main and main.Parent do
+        local target = 0
+        if State.Sound and State.Sound.IsPlaying and not State.IsPaused and not State.IsMinimized then
+            target = math.clamp((State.Sound.PlaybackLoudness or 0) / 550, 0, 1)
+        end
+        smoothedLoudness = smoothedLoudness + (target - smoothedLoudness) * 0.28
+
+        local now = tick()
+        for i = 1, WAVE_COUNT do
+            local phase = (i / WAVE_COUNT) * math.pi * 2
+            local wobble = (math.sin(now * 6 + phase) * 0.5 + 0.5) * 0.6 + 0.4
+            local h = 1 + smoothedLoudness * (WAVE_H - 2) * wobble
+            waveBars[i].Size = UDim2.new(0, 2, 0, h)
+            waveBars[i].BackgroundTransparency = 0.5 - smoothedLoudness * 0.5
+        end
+
+        mainStroke.Thickness = 2 + smoothedLoudness * 1.6
+
+        RunService.RenderStepped:Wait()
+    end
+end)
+
+-- ヘッダー
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, Y_HEADER)
+header.BackgroundColor3 = Theme.Surface
+header.BorderSizePixel = 0
+header.Parent = main
+
+local headerCorner = Instance.new("UICorner", header)
+headerCorner.TopLeftRadius = UDim.new(0, BORDER_CORNER)
+headerCorner.TopRightRadius = UDim.new(0, BORDER_CORNER)
+
+local headerLine = Instance.new("Frame")
+headerLine.AnchorPoint = Vector2.new(0, 1)
+headerLine.Position = UDim2.fromScale(0, 1)
+headerLine.Size = UDim2.new(1, 0, 0, 1)
+headerLine.BackgroundColor3 = Theme.Outline
+headerLine.BorderSizePixel = 0
+headerLine.Parent = header
+
+local title = Instance.new("TextLabel")
+title.BackgroundTransparency = 1
+title.Position = UDim2.fromOffset(8, 0)
+title.Size = UDim2.new(1, -90, 1, 0)
+title.Font = Theme.FontBold
+title.Text = "Music Made By tmmutekitou2"
+title.TextColor3 = Theme.TextDim
+title.TextSize = 11
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextTruncate = Enum.TextTruncate.AtEnd
+title.ZIndex = 2
+title.Parent = header
+
+-- ★ 閉じるボタン（2本の線で描画した X）
+local closeBtn = Instance.new("TextButton")
+closeBtn.AnchorPoint = Vector2.new(1, 0.5)
+closeBtn.Position = UDim2.new(1, -6, 0.5, 0)
+closeBtn.Size = UDim2.fromOffset(22, 22)
+closeBtn.BackgroundTransparency = 1
+closeBtn.Text = ""
+closeBtn.AutoButtonColor = false
+closeBtn.ZIndex = 60
+closeBtn.Parent = header
+
+local closeLine1 = Instance.new("Frame")
+closeLine1.Name = "Line1"
+closeLine1.AnchorPoint = Vector2.new(0.5, 0.5)
+closeLine1.Position = UDim2.fromScale(0.5, 0.5)
+closeLine1.Size = UDim2.fromOffset(13, 2)
+closeLine1.BackgroundColor3 = Theme.TextDim
+closeLine1.BorderSizePixel = 0
+closeLine1.Rotation = 45
+closeLine1.Parent = closeBtn
+
+local closeLine2 = Instance.new("Frame")
+closeLine2.Name = "Line2"
+closeLine2.AnchorPoint = Vector2.new(0.5, 0.5)
+closeLine2.Position = UDim2.fromScale(0.5, 0.5)
+closeLine2.Size = UDim2.fromOffset(13, 2)
+closeLine2.BackgroundColor3 = Theme.TextDim
+closeLine2.BorderSizePixel = 0
+closeLine2.Rotation = -45
+closeLine2.Parent = closeBtn
+
+closeBtn.MouseEnter:Connect(function()
+    closeLine1.BackgroundColor3 = Theme.Danger
+    closeLine2.BackgroundColor3 = Theme.Danger
+end)
+closeBtn.MouseLeave:Connect(function()
+    closeLine1.BackgroundColor3 = Theme.TextDim
+    closeLine2.BackgroundColor3 = Theme.TextDim
+end)
+
+-- ============================================================
+-- ★ 最小化ボタン（マイナス / プラス）
+-- ============================================================
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.AnchorPoint = Vector2.new(1, 0.5)
+minimizeBtn.Position = UDim2.new(1, -32, 0.5, 0)
+minimizeBtn.Size = UDim2.fromOffset(22, 22)
+minimizeBtn.BackgroundTransparency = 1
+minimizeBtn.Text = ""
+minimizeBtn.AutoButtonColor = false
+minimizeBtn.ZIndex = 60
+minimizeBtn.Parent = header
+
+local minimizeLineH = Instance.new("Frame")
+minimizeLineH.Name = "LineH"
+minimizeLineH.AnchorPoint = Vector2.new(0.5, 0.5)
+minimizeLineH.Position = UDim2.fromScale(0.5, 0.5)
+minimizeLineH.Size = UDim2.fromOffset(13, 2)
+minimizeLineH.BackgroundColor3 = Theme.TextDim
+minimizeLineH.BorderSizePixel = 0
+minimizeLineH.Rotation = 0
+minimizeLineH.Parent = minimizeBtn
+
+local minimizeLineV = Instance.new("Frame")
+minimizeLineV.Name = "LineV"
+minimizeLineV.AnchorPoint = Vector2.new(0.5, 0.5)
+minimizeLineV.Position = UDim2.fromScale(0.5, 0.5)
+minimizeLineV.Size = UDim2.fromOffset(13, 2)
+minimizeLineV.BackgroundColor3 = Theme.TextDim
+minimizeLineV.BorderSizePixel = 0
+minimizeLineV.Rotation = 0
+minimizeLineV.BackgroundTransparency = 1
+minimizeLineV.Parent = minimizeBtn
+
+minimizeBtn.MouseEnter:Connect(function()
+    minimizeLineH.BackgroundColor3 = Theme.Accent
+    minimizeLineV.BackgroundColor3 = Theme.Accent
+end)
+minimizeBtn.MouseLeave:Connect(function()
+    minimizeLineH.BackgroundColor3 = Theme.TextDim
+    minimizeLineV.BackgroundColor3 = Theme.TextDim
+end)
+
+-- ============================================================
+-- 音量
+-- ============================================================
+local volHolder = Instance.new("Frame")
+volHolder.Position = UDim2.fromOffset(6, Y_HEADER + Y_TOP_ROW)
+volHolder.Size = UDim2.new(1, -12, 0, TOP_ROW_H)
+volHolder.BackgroundTransparency = 1
+volHolder.Parent = main
+
+local volIcon = Instance.new("TextLabel")
+volIcon.BackgroundTransparency = 1
+volIcon.Position = UDim2.fromOffset(4, 0)
+volIcon.Size = UDim2.fromOffset(24, TOP_ROW_H)
+volIcon.Font = Theme.FontBold
+volIcon.Text = "Vol"
+volIcon.TextColor3 = Theme.TextDim
+volIcon.TextSize = 11
+volIcon.TextXAlignment = Enum.TextXAlignment.Left
+volIcon.Parent = volHolder
+
+local volBar = Instance.new("Frame")
+volBar.Position = UDim2.fromOffset(32, 7)
+volBar.Size = UDim2.new(1, -68, 0, 6)
+volBar.BackgroundColor3 = Theme.SurfaceAlt
+volBar.BorderSizePixel = 0
+volBar.Parent = volHolder
+
+local volFill = Instance.new("Frame")
+volFill.Size = UDim2.new(0.2, 0, 1, 0)
+volFill.BackgroundColor3 = Theme.Accent
+volFill.BorderSizePixel = 0
+volFill.Parent = volBar
+
+local volText = Instance.new("TextLabel")
+volText.AnchorPoint = Vector2.new(1, 0.5)
+volText.Position = UDim2.new(1, -4, 0.5, 0)
+volText.Size = UDim2.fromOffset(30, TOP_ROW_H)
+volText.BackgroundTransparency = 1
+volText.Font = Theme.FontBold
+volText.Text = "2.0"
+volText.TextColor3 = Theme.Text
+volText.TextSize = 11
+volText.TextXAlignment = Enum.TextXAlignment.Right
+volText.Parent = volHolder
+
+-- ============================================================
+-- リストヘッダー
+-- ============================================================
+local listHeader = Instance.new("Frame")
+listHeader.Position = UDim2.fromOffset(6, Y_LIST_TOP)
+listHeader.Size = UDim2.new(1, -12, 0, Y_LIST_LABEL_H)
+listHeader.BackgroundTransparency = 1
+listHeader.Parent = main
+
+local listLabel = Instance.new("TextLabel")
+listLabel.BackgroundTransparency = 1
+listLabel.Position = UDim2.fromOffset(2, 0)
+listLabel.Size = UDim2.new(1, -24, 1, 0)
+listLabel.Font = Theme.FontBold
+listLabel.Text = "Songs"
+listLabel.TextColor3 = Theme.TextDim
+listLabel.TextSize = 12
+listLabel.TextXAlignment = Enum.TextXAlignment.Left
+listLabel.Parent = listHeader
+
+local listToggleBtn = Instance.new("TextButton")
+listToggleBtn.AnchorPoint = Vector2.new(1, 0)
+listToggleBtn.Position = UDim2.new(1, 0, 0, 0)
+listToggleBtn.Size = UDim2.fromOffset(20, Y_LIST_LABEL_H)
+listToggleBtn.BackgroundTransparency = 1
+listToggleBtn.Text = "▼"
+listToggleBtn.TextColor3 = Theme.TextDim
+listToggleBtn.Font = Theme.FontBold
+listToggleBtn.TextSize = 11
+listToggleBtn.AutoButtonColor = false
+listToggleBtn.Parent = listHeader
+
+-- ============================================================
+-- ★ 再生中の曲名（時間の上に静的表示）
+-- ============================================================
+local nowPlayingLabel = Instance.new("TextLabel")
+nowPlayingLabel.Name = "NowPlaying"
+nowPlayingLabel.AnchorPoint = Vector2.new(0, 1)
+nowPlayingLabel.Position = UDim2.new(0, 6, 1, -(Y_BOTTOM_OFF + BOTTOM_ROW_H + 6 + Y_TIME_H + 4))
+nowPlayingLabel.Size = UDim2.new(1, -12, 0, Y_NOWPLAY_H)
+nowPlayingLabel.BackgroundTransparency = 1
+nowPlayingLabel.Font = Theme.FontBold
+nowPlayingLabel.Text = ""
+nowPlayingLabel.TextColor3 = Theme.TextDim
+nowPlayingLabel.TextSize = 11
+nowPlayingLabel.TextXAlignment = Enum.TextXAlignment.Center
+nowPlayingLabel.TextTruncate = Enum.TextTruncate.AtEnd
+nowPlayingLabel.Parent = main
+
+local function SetNowPlaying(text)
+    nowPlayingLabel.Text = text or ""
+end
+
+-- ============================================================
+-- 時間表示（下端基準）
+-- ============================================================
+local timeLabel = Instance.new("TextLabel")
+timeLabel.AnchorPoint = Vector2.new(0, 1)
+timeLabel.Position = UDim2.new(0, 6, 1, -(Y_BOTTOM_OFF + BOTTOM_ROW_H + 6))
+timeLabel.Size = UDim2.new(1, -12, 0, Y_TIME_H)
+timeLabel.BackgroundTransparency = 1
+timeLabel.Font = Theme.FontBold
+timeLabel.Text = "0:00 / 0:00"
+timeLabel.TextColor3 = Theme.TextDim
+timeLabel.TextSize = 11
+timeLabel.TextXAlignment = Enum.TextXAlignment.Center
+timeLabel.Parent = main
+
+-- ============================================================
+-- ★ 最小化トグル処理
+-- ============================================================
+local function SetMinimized(minimized)
+    if State.IsMinimized == minimized then return end
+    State.IsMinimized = minimized
+
+    if minimized and State.ListExpanded then
+        SetListExpanded(false)
+    end
+
+    -- ボタンアイコンのアニメーション（＋ / －）
+    if minimized then
+        TweenService:Create(minimizeLineV, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Rotation = 90,
+            BackgroundTransparency = 0,
+        }):Play()
+    else
+        TweenService:Create(minimizeLineV, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Rotation = 0,
+            BackgroundTransparency = 1,
+        }):Play()
+    end
+
+    local fadeOutInfo = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local fadeInInfo  = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local moveInfo    = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+    if minimized then
+        -- 全部フェードアウト
+        TweenService:Create(title, fadeOutInfo, { TextTransparency = 1 }):Play()
+        TweenService:Create(nowPlayingLabel, fadeOutInfo, { TextTransparency = 1 }):Play()
+        TweenService:Create(timeLabel, fadeOutInfo, { TextTransparency = 1 }):Play()
+        TweenService:Create(resizeHandle, fadeOutInfo, { TextTransparency = 1 }):Play()
+
+        task.delay(0.14, function()
+            if not State.IsMinimized then return end
+
+            -- ヘッダー内配置へスナップ
+            nowPlayingLabel.AnchorPoint = Vector2.new(0, 0.5)
+            nowPlayingLabel.Position = UDim2.new(0, 8, 0, Y_HEADER / 2)
+            nowPlayingLabel.Size = UDim2.new(0, 80, 0, Y_NOWPLAY_H)
+            nowPlayingLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+            timeLabel.AnchorPoint = Vector2.new(1, 0.5)
+            timeLabel.Position = UDim2.new(1, -58, 0, Y_HEADER / 2)
+            timeLabel.Size = UDim2.new(0, 60, 0, Y_TIME_H)
+            timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+            waveFrame.Visible = false
+            resizeHandle.Visible = false
+
+            -- 上端固定で高さを縮小
+            local curH = main.AbsoluteSize.Y
+            local newH = Y_HEADER
+            local newOffsetY = main.Position.Y.Offset + 0.5 * (newH - curH)
+            TweenService:Create(main, moveInfo, {
+                Size = UDim2.fromOffset(State.CurrentW, newH),
+                Position = UDim2.new(main.Position.X.Scale, main.Position.X.Offset,
+                                     main.Position.Y.Scale, newOffsetY),
+            }):Play()
+
+            -- フェードイン
+            TweenService:Create(nowPlayingLabel, fadeInInfo, { TextTransparency = 0 }):Play()
+            TweenService:Create(timeLabel, fadeInInfo, { TextTransparency = 0 }):Play()
+        end)
+    else
+        -- 曲名と時間をフェードアウト
+        TweenService:Create(nowPlayingLabel, fadeOutInfo, { TextTransparency = 1 }):Play()
+        TweenService:Create(timeLabel, fadeOutInfo, { TextTransparency = 1 }):Play()
+
+        task.delay(0.14, function()
+            if State.IsMinimized then return end
+
+            -- 通常配置へ戻す
+            nowPlayingLabel.AnchorPoint = Vector2.new(0, 1)
+            nowPlayingLabel.Position = UDim2.new(0, 6, 1, -(Y_BOTTOM_OFF + BOTTOM_ROW_H + 6 + Y_TIME_H + 4))
+            nowPlayingLabel.Size = UDim2.new(1, -12, 0, Y_NOWPLAY_H)
+            nowPlayingLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+            timeLabel.AnchorPoint = Vector2.new(0, 1)
+            timeLabel.Position = UDim2.new(0, 6, 1, -(Y_BOTTOM_OFF + BOTTOM_ROW_H + 6))
+            timeLabel.Size = UDim2.new(1, -12, 0, Y_TIME_H)
+            timeLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+            waveFrame.Visible = true
+
+            resizeHandle.Visible = true
+            resizeHandle.TextTransparency = 1
+            TweenService:Create(resizeHandle, fadeInInfo, { TextTransparency = 0 }):Play()
+
+            -- 上端固定で高さを拡大
+            local curH = main.AbsoluteSize.Y
+            local newH = State.NormalHeight
+            local newOffsetY = main.Position.Y.Offset + 0.5 * (newH - curH)
+            TweenService:Create(main, moveInfo, {
+                Size = UDim2.fromOffset(State.CurrentW, newH),
+                Position = UDim2.new(main.Position.X.Scale, main.Position.X.Offset,
+                                     main.Position.Y.Scale, newOffsetY),
+            }):Play()
+
+            -- タイトル・曲名・時間をフェードイン
+            TweenService:Create(title, fadeInInfo, { TextTransparency = 0 }):Play()
+            TweenService:Create(nowPlayingLabel, fadeInInfo, { TextTransparency = 0 }):Play()
+            TweenService:Create(timeLabel, fadeInInfo, { TextTransparency = 0 }):Play()
+        end)
+    end
+end
+
+minimizeBtn.MouseButton1Click:Connect(function()
+    SetMinimized(not State.IsMinimized)
+end)
+
+-- ============================================================
+-- ボタン行（下端基準）
+-- ============================================================
+local btnRow = Instance.new("Frame")
+btnRow.AnchorPoint = Vector2.new(0, 1)
+btnRow.Position = UDim2.new(0, 6, 1, -Y_BOTTOM_OFF)
+btnRow.Size = UDim2.new(1, -12, 0, BOTTOM_ROW_H)
+btnRow.BackgroundTransparency = 1
+btnRow.Parent = main
+
+-- 巻き戻し（記号）
+local rewindBtn = Instance.new("TextButton")
+rewindBtn.Name = "Rewind"
+rewindBtn.AnchorPoint = Vector2.new(0, 0.5)
+rewindBtn.Position = UDim2.new(0, 0, 0.5, 0)
+rewindBtn.Size = UDim2.fromOffset(28, 28)
+rewindBtn.BackgroundTransparency = 1
+rewindBtn.Text = SYM_REWIND
+rewindBtn.TextColor3 = Theme.TextDim
+rewindBtn.TextSize = 22
+rewindBtn.Font = Theme.FontBold
+rewindBtn.AutoButtonColor = false
+rewindBtn.Parent = btnRow
+
+-- 再生/停止
+local playPauseBtn = Instance.new("TextButton")
+playPauseBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+playPauseBtn.Position = UDim2.fromScale(0.5, 0.5)
+playPauseBtn.Size = UDim2.fromOffset(40, BOTTOM_ROW_H)
+playPauseBtn.BackgroundTransparency = 1
+playPauseBtn.Text = ""
+playPauseBtn.AutoButtonColor = false
+playPauseBtn.Parent = btnRow
+
+local iconHolder = Instance.new("Frame")
+iconHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+iconHolder.Position = UDim2.fromScale(0.5, 0.5)
+iconHolder.Size = UDim2.fromOffset(32, 26)
+iconHolder.BackgroundTransparency = 1
+iconHolder.Parent = playPauseBtn
+
+local triangle = Instance.new("TextLabel")
+triangle.AnchorPoint = Vector2.new(0.5, 0.5)
+triangle.Position = UDim2.fromScale(0.5, 0.5)
+triangle.Size = UDim2.fromScale(1, 1)
+triangle.BackgroundTransparency = 1
+triangle.Text = "▶"
+triangle.Font = Theme.FontBold
+triangle.TextColor3 = Theme.TextDim
+triangle.TextSize = ICON_SIZE
+triangle.TextXAlignment = Enum.TextXAlignment.Center
+triangle.Parent = iconHolder
+
+local bar1 = Instance.new("Frame")
+bar1.AnchorPoint = Vector2.new(0.5, 0.5)
+bar1.Position = UDim2.fromScale(0.5, 0.5)
+bar1.Size = UDim2.fromOffset(BAR_W, 0)
+bar1.BackgroundColor3 = Theme.TextDim
+bar1.BackgroundTransparency = 1
+bar1.BorderSizePixel = 0
+bar1.Parent = iconHolder
+
+local bar2 = Instance.new("Frame")
+bar2.AnchorPoint = Vector2.new(0.5, 0.5)
+bar2.Position = UDim2.fromScale(0.5, 0.5)
+bar2.Size = UDim2.fromOffset(BAR_W, 0)
+bar2.BackgroundColor3 = Theme.TextDim
+bar2.BackgroundTransparency = 1
+bar2.BorderSizePixel = 0
+bar2.Parent = iconHolder
+
+local loadingLabel = Instance.new("TextLabel")
+loadingLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+loadingLabel.Position = UDim2.fromScale(0.5, 0.5)
+loadingLabel.Size = UDim2.fromScale(1, 1)
+loadingLabel.BackgroundTransparency = 1
+loadingLabel.Text = "読み込み中..."
+loadingLabel.Font = Theme.FontBold
+loadingLabel.TextColor3 = Theme.TextDim
+loadingLabel.TextSize = 10
+loadingLabel.TextXAlignment = Enum.TextXAlignment.Center
+loadingLabel.TextTransparency = 1
+loadingLabel.Visible = false
+loadingLabel.Parent = playPauseBtn
+
+-- 送り（記号）
+local forwardBtn = Instance.new("TextButton")
+forwardBtn.Name = "Forward"
+forwardBtn.AnchorPoint = Vector2.new(1, 0.5)
+forwardBtn.Position = UDim2.new(1, 0, 0.5, 0)
+forwardBtn.Size = UDim2.fromOffset(28, 28)
+forwardBtn.BackgroundTransparency = 1
+forwardBtn.Text = SYM_FORWARD
+forwardBtn.TextColor3 = Theme.TextDim
+forwardBtn.TextSize = 22
+forwardBtn.Font = Theme.FontBold
+forwardBtn.AutoButtonColor = false
+forwardBtn.Parent = btnRow
+
+-- ホバー演出
+rewindBtn.MouseEnter:Connect(function()
+    rewindBtn.TextColor3 = Theme.Accent
+end)
+rewindBtn.MouseLeave:Connect(function()
+    rewindBtn.TextColor3 = Theme.TextDim
+end)
+
+forwardBtn.MouseEnter:Connect(function()
+    forwardBtn.TextColor3 = Theme.Accent
+end)
+forwardBtn.MouseLeave:Connect(function()
+    forwardBtn.TextColor3 = Theme.TextDim
+end)
+
+-- クリック
+rewindBtn.MouseButton1Click:Connect(function()
+    SeekBy(-SEEK_SECONDS)
+end)
+
+forwardBtn.MouseButton1Click:Connect(function()
+    SeekBy(SEEK_SECONDS)
+end)
+
+-- ============================================================
+-- ★ リサイズハンドル（斜め記号、縦横独立）
+-- ============================================================
+resizeHandle = Instance.new("TextButton")
+resizeHandle.AnchorPoint = Vector2.new(1, 1)
+resizeHandle.Position = UDim2.new(1, -3, 1, -3)
+resizeHandle.Size = UDim2.fromOffset(18, 18)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Text = SYM_RESIZE
+resizeHandle.TextColor3 = Theme.TextDim
+resizeHandle.TextSize = 16
+resizeHandle.Font = Theme.FontBold
+resizeHandle.AutoButtonColor = false
+resizeHandle.ZIndex = 100
+resizeHandle.Parent = main
+
+resizeHandle.MouseEnter:Connect(function()
+    resizeHandle.TextColor3 = Theme.Accent
+end)
+resizeHandle.MouseLeave:Connect(function()
+    if not State._Resizing then
+        resizeHandle.TextColor3 = Theme.TextDim
+    end
+end)
+
+local resizing = false
+local resizeStartPos
+local resizeStartW, resizeStartH
+
+resizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = true
+        State._Resizing = true
+        resizeStartPos = input.Position
+        resizeStartW = State.CurrentW
+        resizeStartH = State.CurrentH
+        resizeHandle.TextColor3 = Theme.Accent
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not resizing then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+       and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+
+    local delta = input.Position - resizeStartPos
+    local newW = math.clamp(resizeStartW + delta.X, MIN_W, MAX_W)
+    local newH
+    if State.IsMinimized then
+        newH = Y_HEADER
+    else
+        newH = math.clamp(resizeStartH + delta.Y, MIN_H, MAX_H)
+        State.NormalHeight = newH
+    end
+
+    State.CurrentW = newW
+    State.CurrentH = newH
+
+    main.Size = UDim2.fromOffset(newW, newH)
+
+    if listFrame.Visible then
+        listFrame.Size = UDim2.fromOffset(newW - 12, listFrame.Size.Y.Offset)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        if resizing then
+            resizing = false
+            State._Resizing = false
+            resizeHandle.TextColor3 = Theme.TextDim
+        end
+    end
+end)
+
+-- ============================================================
+-- アイコン切り替え
+-- ============================================================
+local iconState = "play"
+local iconToken = 0
+
+local function ShowLoading(show)
+    if show then
+        loadingLabel.Visible = true
+        iconHolder.Visible = false
+        loadingLabel.TextTransparency = 1
+        TweenService:Create(loadingLabel, TweenInfo.new(0.15), {
+            TextTransparency = 0,
+        }):Play()
+    else
+        TweenService:Create(loadingLabel, TweenInfo.new(0.15), {
+            TextTransparency = 1,
+        }):Play()
+        task.delay(0.15, function()
+            if State.IsLoading then return end
+            loadingLabel.Visible = false
+            iconHolder.Visible = true
+        end)
+    end
+end
+
+local function SetIconState(newState, color)
+    if iconState == newState then
+        if newState == "play" then
+            triangle.TextColor3 = color
+        else
+            bar1.BackgroundColor3 = color
+            bar2.BackgroundColor3 = color
+        end
+        return
+    end
+
+    iconState = newState
+    iconToken = iconToken + 1
+    local token = iconToken
+
+    if newState == "pause" then
+        triangle.TextColor3 = color
+        TweenService:Create(triangle, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Rotation = 90,
+            TextTransparency = 1,
+        }):Play()
+
+        bar1.BackgroundColor3 = color
+        bar2.BackgroundColor3 = color
+        bar1.Position = UDim2.fromScale(0.5, 0.5)
+        bar2.Position = UDim2.fromScale(0.5, 0.5)
+        bar1.Size = UDim2.fromOffset(BAR_W, 0)
+        bar2.Size = UDim2.fromOffset(BAR_W, 0)
+        bar1.BackgroundTransparency = 0
+        bar2.BackgroundTransparency = 0
+
+        task.delay(0.1, function()
+            if iconToken ~= token then return end
+            TweenService:Create(bar1, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = UDim2.fromOffset(BAR_W, BAR_H),
+                Position = UDim2.new(0.5, -BAR_GAP, 0.5, 0),
+            }):Play()
+            TweenService:Create(bar2, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = UDim2.fromOffset(BAR_W, BAR_H),
+                Position = UDim2.new(0.5, BAR_GAP, 0.5, 0),
+            }):Play()
+        end)
+    else
+        TweenService:Create(bar1, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Size = UDim2.fromOffset(BAR_W, 0),
+            Position = UDim2.fromScale(0.5, 0.5),
+            BackgroundTransparency = 1,
+        }):Play()
+        TweenService:Create(bar2, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Size = UDim2.fromOffset(BAR_W, 0),
+            Position = UDim2.fromScale(0.5, 0.5),
+            BackgroundTransparency = 1,
+        }):Play()
+
+        triangle.TextColor3 = color
+        triangle.Rotation = -90
+        triangle.TextTransparency = 1
+        task.delay(0.1, function()
+            if iconToken ~= token then return end
+            TweenService:Create(triangle, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Rotation = 0,
+                TextTransparency = 0,
+            }):Play()
+        end)
+    end
+end
+
+-- ============================================================
+-- 時間表示更新
+-- ============================================================
+local function FormatTime(seconds)
+    seconds = math.max(0, math.floor(seconds or 0))
+    local m = math.floor(seconds / 60)
+    local s = seconds % 60
+    return string.format("%d:%02d", m, s)
+end
+
+task.spawn(function()
+    while main and main.Parent do
+        if State.Sound then
+            local pos = State.Sound.TimePosition or 0
+            local len = State.Sound.TimeLength or 0
+            timeLabel.Text = FormatTime(pos) .. " / " .. FormatTime(len)
+        else
+            timeLabel.Text = "0:00 / 0:00"
+        end
+        task.wait(0.25)
+    end
+end)
+
+-- ============================================================
+-- リスト
+-- ============================================================
+local listFrame = Instance.new("ScrollingFrame")
+listFrame.Name = "SongList"
+listFrame.BackgroundColor3 = Theme.SurfaceAlt
+listFrame.BorderSizePixel = 0
+listFrame.ScrollBarThickness = 2
+listFrame.ScrollBarImageColor3 = Theme.Accent
+listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+listFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+listFrame.ClipsDescendants = true
+listFrame.Visible = false
+listFrame.ZIndex = 5
+listFrame.Size = UDim2.fromOffset(WIDTH - 12, LIST_EXPAND_H)
+listFrame.Parent = gui
+
+local listCorner = Instance.new("UICorner", listFrame)
+listCorner.CornerRadius = UDim.new(0, BORDER_CORNER)
+
+local listStroke = Instance.new("UIStroke", listFrame)
+listStroke.Color = Theme.Outline
+listStroke.Thickness = 2
+listStroke.Transparency = 0
+
+local listLayout = Instance.new("UIListLayout", listFrame)
+listLayout.Padding = UDim.new(0, 3)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local listPad = Instance.new("UIPadding", listFrame)
+listPad.PaddingTop = UDim.new(0, 4)
+listPad.PaddingBottom = UDim.new(0, 4)
+listPad.PaddingLeft = UDim.new(0, 4)
+listPad.PaddingRight = UDim.new(0, 4)
+
+-- ============================================================
+-- 雪
+-- ============================================================
+local function SpawnSnowflake(parentFrame)
+    local flake = Instance.new("Frame")
+    flake.AnchorPoint = Vector2.new(0.5, 0.5)
+    flake.BackgroundColor3 = Theme.Snow
+    flake.BorderSizePixel = 0
+    flake.BackgroundTransparency = 1
+    flake.ZIndex = (parentFrame == snowLayer) and 50 or 6
+    flake.Parent = parentFrame
+
+    local size = math.random(2, 5)
+    flake.Size = UDim2.fromOffset(size, size)
+
+    local corner = Instance.new("UICorner", flake)
+    corner.CornerRadius = UDim.new(1, 0)
+
+    local startX = math.random(-10, 110) / 100
+    local endX = startX + (math.random(-15, 15) / 100)
+    local duration = math.random(35, 70) / 10
+    local maxTransparency = math.random(20, 55) / 100
+
+    flake.Position = UDim2.fromScale(startX, -0.05)
+    flake.BackgroundTransparency = 1
+
+    TweenService:Create(flake, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        BackgroundTransparency = maxTransparency,
+    }):Play()
+
+    local fall = TweenService:Create(flake, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+        Position = UDim2.fromScale(endX, 1.05),
+    })
+    fall:Play()
+
+    fall.Completed:Connect(function()
+        flake:Destroy()
+    end)
+    task.delay(duration + 1, function()
+        if flake and flake.Parent then flake:Destroy() end
+    end)
+end
+
+task.spawn(function()
+    while main and main.Parent do
+        SpawnSnowflake(snowLayer)
+        if math.random() < 0.5 then SpawnSnowflake(snowLayer) end
+        task.wait(math.random(20, 50) / 100)
+    end
+end)
+
+-- リスト位置
+local function GetListTopY()
+    if not (main and main.Parent) then return 0 end
+    return main.AbsolutePosition.Y + Y_LIST_TOP + Y_LIST_LABEL_H + 2
+end
+
+local function GetListLeftX()
+    if not (main and main.Parent) then return 0 end
+    return main.AbsolutePosition.X + 6
+end
+
+-- ============================================================
+-- UI
+-- ============================================================
+UI = {}
+local songButtons = {}
+
+function UI.RefreshList()
+    for i, btn in ipairs(songButtons) do
+        local isPlaying = (State.PlayingIndex == i)
+        local isSelected = (State.SelectedIndex == i)
+
+        if isPlaying then
+            btn.BackgroundColor3 = Theme.AccentDim
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.Text = "▶  " .. Songs[i].Name
+        elseif isSelected then
+            btn.BackgroundColor3 = Theme.Selected
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.Text = "▶  " .. Songs[i].Name
+        else
+            btn.BackgroundColor3 = Theme.Surface
+            btn.TextColor3 = Theme.Text
+            btn.Text = "     " .. Songs[i].Name
+        end
+    end
+end
+
+function UI.UpdatePlayButton()
+    if State.IsLoading then
+        ShowLoading(true)
+        return
+    end
+    ShowLoading(false)
+
+    if not State.Sound or State.IsPaused then
+        SetIconState("play", Theme.TextDim)
+    else
+        SetIconState("pause", Theme.Accent)
+    end
+end
+
+function UI.Notify(text)
+    title.Text = text
+    task.delay(2, function()
+        if title and title.Parent then
+            title.Text = "Music Made By tmmutekitou2"
+        end
+    end)
+end
+
+UI.SetNowPlaying = SetNowPlaying
+
+for i, entry in ipairs(Songs) do
+    local btn = Instance.new("TextButton")
+    btn.Name = "Song" .. i
+    btn.Size = UDim2.new(1, 0, 0, 26)
+    btn.BackgroundColor3 = Theme.Surface
+    btn.Text = "     " .. entry.Name
+    btn.Font = Theme.Font
+    btn.TextColor3 = Theme.Text
+    btn.TextSize = 11
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.AutoButtonColor = false
+    btn.LayoutOrder = i
+    btn.Parent = listFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    songButtons[i] = btn
+
+    btn.MouseButton1Click:Connect(function()
+        State.SelectedIndex = i
+        UI.RefreshList()
+        task.delay(0.08, function()
+            SetListExpanded(false)
+        end)
+    end)
+end
+
+-- ============================================================
+-- リスト開閉
+-- ============================================================
+local listOpenTween, listCloseTween
+local currentAnimToken = 0
+
+local function StopListTweens()
+    if listOpenTween then pcall(function() listOpenTween:Cancel() end); listOpenTween = nil end
+    if listCloseTween then pcall(function() listCloseTween:Cancel() end); listCloseTween = nil end
+end
+
+local function AnimateOpen()
+    StopListTweens()
+    currentAnimToken = currentAnimToken + 1
+    local token = currentAnimToken
+
+    listFrame.Visible = true
+    State.Animating = true
+
+    local w = State.CurrentW - 12
+    listFrame.Size = UDim2.fromOffset(w, 0)
+    listFrame.BackgroundTransparency = 1
+    listStroke.Transparency = 1
+    listFrame.Position = UDim2.fromOffset(GetListLeftX(), GetListTopY())
+
+    for _, btn in ipairs(songButtons) do
+        btn.BackgroundTransparency = 1
+        btn.TextTransparency = 1
+    end
+
+    local targetSize = UDim2.fromOffset(w, LIST_EXPAND_H)
+
+    listOpenTween = TweenService:Create(listFrame, TWEEN_INFO, {
+        Size = targetSize,
+        BackgroundTransparency = 0,
+    })
+    local strokeTween = TweenService:Create(listStroke, TWEEN_INFO, { Transparency = 0 })
+    listOpenTween:Play()
+    strokeTween:Play()
+
+    task.delay(0.05, function()
+        if token ~= currentAnimToken then return end
+        for _, btn in ipairs(songButtons) do
+            TweenService:Create(btn, TWEEN_INFO, {
+                BackgroundTransparency = 0,
+                TextTransparency = 0,
+            }):Play()
+        end
+    end)
+
+    listOpenTween.Completed:Connect(function()
+        if token ~= currentAnimToken then return end
+        State.Animating = false
+    end)
+end
+
+local function AnimateClose()
+    StopListTweens()
+    currentAnimToken = currentAnimToken + 1
+    local token = currentAnimToken
+
+    State.Animating = true
+
+    for _, btn in ipairs(songButtons) do
+        TweenService:Create(btn, TWEEN_INFO, {
+            BackgroundTransparency = 1,
+            TextTransparency = 1,
+        }):Play()
+    end
+
+    listCloseTween = TweenService:Create(listFrame, TWEEN_INFO, {
+        Size = UDim2.fromOffset(listFrame.Size.X.Offset, 0),
+        BackgroundTransparency = 1,
+    })
+    local strokeTween = TweenService:Create(listStroke, TWEEN_INFO, { Transparency = 1 })
+    listCloseTween:Play()
+    strokeTween:Play()
+
+    listCloseTween.Completed:Connect(function()
+        if token ~= currentAnimToken then return end
+        listFrame.Visible = false
+        State.Animating = false
+    end)
+end
+
+function SetListExpanded(expanded)
+    if State.ListExpanded == expanded and not State.Animating then return end
+    State.ListExpanded = expanded
+    listToggleBtn.Text = expanded and "▲" or "▼"
+
+    if expanded then AnimateOpen() else AnimateClose() end
+end
+
+listToggleBtn.MouseButton1Click:Connect(function()
+    SetListExpanded(not State.ListExpanded)
+end)
+
+RunService.RenderStepped:Connect(function()
+    if listFrame.Visible then
+        listFrame.Position = UDim2.fromOffset(GetListLeftX(), GetListTopY())
+    end
+end)
+
+-- ============================================================
+-- 再生ボタン
+-- ============================================================
+playPauseBtn.MouseButton1Click:Connect(function()
+    if State.IsLoading then return end
+
+    if not State.Sound then
+        PlaySelected()
+    elseif State.SelectedIndex ~= State.PlayingIndex and State.SelectedIndex > 0 then
+        PlaySelected()
+    elseif State.IsPaused then
+        ResumeSound()
+    else
+        PauseSound()
+    end
+end)
+
+-- ============================================================
+-- 音量スライダー
+-- ============================================================
+local volDragging = false
+local function updateVol(input)
+    local rel = math.clamp((input.Position.X - volBar.AbsolutePosition.X) / volBar.AbsoluteSize.X, 0, 1)
+    State.Volume = rel * 10
+    volFill.Size = UDim2.new(rel, 0, 1, 0)
+    volText.Text = string.format("%.1f", State.Volume)
+    if State.Sound then State.Sound.Volume = State.Volume end
+end
+
+volBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        volDragging = true
+        updateVol(input)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if volDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+       or input.UserInputType == Enum.UserInputType.Touch) then
+        updateVol(input)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+       or input.UserInputType == Enum.UserInputType.Touch then
+        volDragging = false
+    end
+end)
+
+-- ============================================================
+-- ドラッグ移動
+-- ============================================================
+do
+    local dragging, dragStart, startPos
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = main.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+           or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            main.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+           or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+closeBtn.MouseButton1Click:Connect(function()
+    DestroySound()
+    gui:Destroy()
+end)
+
+UI.UpdatePlayButton()
+UI.RefreshList()
+UI.Notify("準備完了")
