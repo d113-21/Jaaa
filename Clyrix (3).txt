@@ -2,7 +2,6 @@
 -- ★★★ Clyrix - 完全統合版 (Drift Kick + Physics Sync + Plot Breaker) ★★★
 -- =====================================================
 
-loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
 local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
@@ -5863,17 +5862,6 @@ NoBlobGroup:AddButton({
 -- =====================================================
 local EspGroup = Tabs.Visuals:AddLeftGroupbox("ESP", "eye")
 
-task.spawn(function()
-    while task.wait(1) do
-        if Toggles.LockClockTime and Toggles.LockClockTime.Value then
-            local currentVal = Options.WorldClockTime and Options.WorldClockTime.Value
-            if currentVal then
-                Lighting.ClockTime = currentVal
-            end
-        end
-    end
-end)
-
 local ESP_CONFIG = { ImageId = "rbxassetid://85976003217279", MaxDistance = 500, BaseSize = 10 }
 local ESP_ROTATE_SPEED = 160
 local ESP_PULSE_SPEED = 1.8
@@ -6248,64 +6236,35 @@ task.spawn(function()
         pcall(tryInject)
     end
 end)
+
 -- =====================================================
 -- Visuals: Time (ワールド時間変更)
 -- =====================================================
-local TimeGroup = Tabs.Visuals:AddRightGroupbox("Time", "clock")
+ClyrixTimeLighting = game:GetService("Lighting")
+ClyrixTimeOriginalClock = ClyrixTimeLighting.ClockTime
+ClyrixTimeOriginalOfDay = ClyrixTimeLighting.TimeOfDay
+ClyrixTimeEnabled = false
+ClyrixTimeHour = 12
+ClyrixTimeMinute = 0
 
-local Lighting = game:GetService("Lighting")
+ClyrixTimeGroup = Tabs.Visuals:AddRightGroupbox("Time", "clock")
 
-local TimeCFG = {
-    enabled = false,
-    hour = 12,
-    minute = 0,
-    originalClockTime = Lighting.ClockTime,
-    originalTimeOfDay = Lighting.TimeOfDay,
-    connection = nil,
-}
-
-local function applyTime()
-    Lighting.ClockTime = TimeCFG.hour + (TimeCFG.minute / 60)
-end
-
-local function startTimeLoop()
-    if TimeCFG.connection then return end
-    TimeCFG.connection = RunService.Heartbeat:Connect(function()
-        if not TimeCFG.enabled then return end
-        applyTime()
-    end)
-end
-
-local function stopTimeLoop()
-    if TimeCFG.connection then
-        TimeCFG.connection:Disconnect()
-        TimeCFG.connection = nil
-    end
-end
-
-local function restoreTime()
-    pcall(function() Lighting.ClockTime = TimeCFG.originalClockTime end)
-    pcall(function() Lighting.TimeOfDay = TimeCFG.originalTimeOfDay end)
-end
-
-TimeGroup:AddToggle("TimeEnable", {
+ClyrixTimeGroup:AddToggle("TimeEnable", {
     Text = "時間変更を有効化",
     Default = false,
-    Callback = function(v)
-        TimeCFG.enabled = v
-        if v then
-            TimeCFG.originalClockTime = Lighting.ClockTime
-            TimeCFG.originalTimeOfDay = Lighting.TimeOfDay
-            startTimeLoop()
-            applyTime()
+    Callback = function(value)
+        ClyrixTimeEnabled = value
+        if value then
+            ClyrixTimeOriginalClock = ClyrixTimeLighting.ClockTime
+            ClyrixTimeOriginalOfDay = ClyrixTimeLighting.TimeOfDay
         else
-            stopTimeLoop()
-            restoreTime()
+            ClyrixTimeLighting.ClockTime = ClyrixTimeOriginalClock
+            ClyrixTimeLighting.TimeOfDay = ClyrixTimeOriginalOfDay
         end
     end,
 })
 
-TimeGroup:AddDropdown("TimePreset", {
+ClyrixTimeGroup:AddDropdown("TimePreset", {
     Text = "プリセット",
     Values = {
         "朝 (06:00)",
@@ -6314,53 +6273,58 @@ TimeGroup:AddDropdown("TimePreset", {
         "夜 (00:00)",
         "深夜 (03:00)",
     },
-    Default = "昼 (12:00)",
-    Callback = function(v)
-        local map = {
-            ["朝 (06:00)"]   = 6,
-            ["昼 (12:00)"]   = 12,
-            ["夕方 (18:00)"] = 18,
-            ["夜 (00:00)"]   = 0,
-            ["深夜 (03:00)"] = 3,
-        }
-        local h = map[v]
-        if h then
-            TimeCFG.hour = h
-            TimeCFG.minute = 0
-            pcall(function() Options.TimeHour:SetValue(h) end)
-            pcall(function() Options.TimeMinute:SetValue(0) end)
-            if TimeCFG.enabled then applyTime() end
+    Default = 2,
+    Callback = function(value)
+        if value == "朝 (06:00)" then
+            ClyrixTimeHour = 6
+        elseif value == "昼 (12:00)" then
+            ClyrixTimeHour = 12
+        elseif value == "夕方 (18:00)" then
+            ClyrixTimeHour = 18
+        elseif value == "夜 (00:00)" then
+            ClyrixTimeHour = 0
+        elseif value == "深夜 (03:00)" then
+            ClyrixTimeHour = 3
+        end
+        ClyrixTimeMinute = 0
+        if ClyrixTimeEnabled then
+            ClyrixTimeLighting.ClockTime = ClyrixTimeHour + ClyrixTimeMinute / 60
         end
     end,
 })
 
-TimeGroup:AddSlider("TimeHour", {
+ClyrixTimeGroup:AddSlider("TimeHour", {
     Text = "時 (Hour)",
     Default = 12, Min = 0, Max = 23, Rounding = 0, Suffix = "時",
-    Callback = function(v)
-        TimeCFG.hour = v
-        if TimeCFG.enabled then applyTime() end
+    Callback = function(value)
+        ClyrixTimeHour = value
+        if ClyrixTimeEnabled then
+            ClyrixTimeLighting.ClockTime = ClyrixTimeHour + ClyrixTimeMinute / 60
+        end
     end,
 })
 
-TimeGroup:AddSlider("TimeMinute", {
+ClyrixTimeGroup:AddSlider("TimeMinute", {
     Text = "分 (Minute)",
     Default = 0, Min = 0, Max = 59, Rounding = 0, Suffix = "分",
-    Callback = function(v)
-        TimeCFG.minute = v
-        if TimeCFG.enabled then applyTime() end
+    Callback = function(value)
+        ClyrixTimeMinute = value
+        if ClyrixTimeEnabled then
+            ClyrixTimeLighting.ClockTime = ClyrixTimeHour + ClyrixTimeMinute / 60
+        end
     end,
 })
 
-TimeGroup:AddButton({
+ClyrixTimeGroup:AddButton({
     Text = "リセット（元の時間に戻す）",
     Func = function()
-        TimeCFG.enabled = false
+        ClyrixTimeEnabled = false
         pcall(function() Toggles.TimeEnable:SetValue(false) end)
-        stopTimeLoop()
-        restoreTime()
+        ClyrixTimeLighting.ClockTime = ClyrixTimeOriginalClock
+        ClyrixTimeLighting.TimeOfDay = ClyrixTimeOriginalOfDay
     end,
 })
+
 -- =====================================================
 -- UI Settings
 -- =====================================================
