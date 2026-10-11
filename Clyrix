@@ -70,7 +70,7 @@ local Tabs = {
 -- =====================================================
 local TargetGroup = Tabs.Target:AddLeftGroupbox("Target")
 local DriftSettingsGroup = Tabs.Target:AddLeftGroupbox("ドリフトキック調節")
-local RagdollGroup = Tabs.Target:AddRightGroupbox("Ragdoll Kill")
+local RagdollGroup = Tabs.Target:AddRightGroupbox("Kill Mode")
 local DriftKickGroup = Tabs.Target:AddRightGroupbox("ドリフトキック")
 
 -- 共有選択プレイヤー
@@ -875,6 +875,319 @@ RagdollGroup:AddToggle("LoopBananaRagdoll", {
             stopLoopLocal()
         end
     end
+})
+-- ============================================================
+-- Kill Mode: ソースコードそのまま追加
+-- ============================================================
+
+-- ---------- Shared Helpers (キル.txt そのまま) ----------
+local function GetHRH(c)
+    if c then
+        return c:FindFirstChild("Head"), c:FindFirstChild("HumanoidRootPart"), c:FindFirstChild("Humanoid")
+    end
+    return nil, nil, nil
+end
+
+local function Teleport(part, cf, offset)
+    if part and cf and offset then
+        part.CFrame = cf * offset
+        part.Velocity = Vector3.zero
+        part.RotVelocity = Vector3.zero
+    end
+end
+
+local function Ownerboat(part)
+    if not part then return nil end
+    replicatedStorage.GrabEvents.SetNetworkOwner:FireServer(part, part.CFrame)
+    if part:FindFirstChild("PartOwner") and part.PartOwner.Value == LocalPlayer.Name then
+        return part.PartOwner
+    end
+    return nil
+end
+
+local function UnGrab(part)
+    local dgl = replicatedStorage.GrabEvents:FindFirstChild("DestroyGrabLine")
+    if part and dgl then dgl:FireServer(part) end
+end
+
+-- ---------- XOCU Kill (Loop Kill) ----------
+local XOCU_HEIGHT_LIMIT = 100000
+local XOCU_TELEPORT_OFFSET = Vector3.new(6, -18.5, 0)
+
+local CameraAnchor = {}
+CameraAnchor.__index = CameraAnchor
+function CameraAnchor.new() return setmetatable({}, CameraAnchor) end
+function CameraAnchor:attach(cf)
+    self:detach()
+    local p = Instance.new("Part")
+    p.Name = "CameraAnchor"; p.Size = Vector3.new(0.2, 0.2, 0.2)
+    p.Transparency = 1; p.Anchored = true; p.CanCollide = false
+    p.CFrame = cf; p.Parent = Workspace; self.part = p
+    local cam = Workspace.CurrentCamera
+    cam.CameraType = Enum.CameraType.Custom; cam.CameraSubject = p
+end
+function CameraAnchor:detach()
+    if self.part then self.part:Destroy() self.part = nil end
+    local cam = Workspace.CurrentCamera
+    local c = LocalPlayer.Character
+    if c and c:FindFirstChild("Humanoid") then
+        cam.CameraSubject = c.Humanoid
+    else
+        cam.CameraType = Enum.CameraType.Custom
+    end
+end
+local cameraAnchor = CameraAnchor.new()
+
+local function XOCU_isTooHigh(plr)
+    local c = plr.Character
+    local hrp = c and c:FindFirstChild("HumanoidRootPart")
+    return not hrp or hrp.Position.Y > XOCU_HEIGHT_LIMIT
+end
+local function XOCU_setNoCollideChar(c)
+    for _, v in ipairs(c:GetDescendants()) do
+        if v:IsA("BasePart") then v.CanCollide = false end
+    end
+end
+local function XOCU_saveOriginalPos()
+    local c = LocalPlayer.Character
+    local hrp = c and c:FindFirstChild("HumanoidRootPart")
+    if hrp then c:SetAttribute("OriginalPosition", hrp:GetPivot()) end
+end
+local function XOCU_getOriginalPos()
+    local c = LocalPlayer.Character
+    return c and c:GetAttribute("OriginalPosition") or nil
+end
+local function XOCU_scheduleReturnHome()
+    local originalPos = XOCU_getOriginalPos()
+    if not originalPos then return end
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        local c = LocalPlayer.Character
+        local hrp = c and c:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp:PivotTo(originalPos)
+            if getgenv().originalFallenHeight then
+                Workspace.FallenPartsDestroyHeight = getgenv().originalFallenHeight
+            end
+            c:SetAttribute("SavingOriginalPos", false)
+        end
+        cameraAnchor:detach()
+        conn:Disconnect()
+    end)
+end
+local function XOCU_findBlobman()
+    local toys = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+    return toys and toys:FindFirstChild("CreatureBlobman") or nil
+end
+local function XOCU_ensureBlobman()
+    local b = XOCU_findBlobman()
+    if b then return b end
+    replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(
+        "CreatureBlobman",
+        LocalPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -5),
+        Vector3.new(0, -15, 0)
+    )
+    for _ = 1, 30 do
+        task.wait(0.1)
+        b = XOCU_findBlobman()
+        if b then return b end
+    end
+    return nil
+end
+local function XOCU_modifyTarget(root, hum)
+    if not (root and hum) or hum.Health <= 0 then return end
+    local blob = XOCU_ensureBlobman()
+    if blob and blob:FindFirstChild("BlobmanSeatAndOwnerScript") then
+        local drop = blob.BlobmanSeatAndOwnerScript:FindFirstChild("CreatureDrop")
+        if drop then
+            for _, part in ipairs(hum.Parent:GetDescendants()) do
+                if part:IsA("Weld") or part:IsA("BallSocketConstraint") then
+                    drop:FireServer(part, part)
+                end
+            end
+        end
+    end
+    hum.Sit = false
+    hum:ChangeState(Enum.HumanoidStateType.Running)
+    hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+    local plr = Players:GetPlayerFromCharacter(hum.Parent)
+    if plr and plr:FindFirstChild("IsHeld") then plr.IsHeld.Value = false end
+    local rag = hum:FindFirstChild("Ragdolled")
+    if rag then rag.Value = false end
+    local bv = Instance.new("BodyVelocity")
+    local bav = Instance.new("BodyAngularVelocity")
+    bv.MaxForce = Vector3.new(1e7, -1e7, 1e7); bv.P = 1e6
+    bv.Velocity = Vector3.new(math.random(-500, 50), -50, math.random(-50, 50))
+    bav.MaxTorque = Vector3.new(-1e7, -1e7, -1e7); bav.P = 1e6
+    bav.AngularVelocity = Vector3.new(math.random(-500, 300), math.random(-300, 300), math.random(-500, 500))
+    bv.Parent = root; bav.Parent = root
+    hum.BreakJointsOnDeath = false
+    hum:ChangeState(Enum.HumanoidStateType.Dead)
+    task.delay(2, function()
+        if bv.Parent then bv:Destroy() end
+        if bav.Parent then bav:Destroy() end
+    end)
+end
+
+local LoopKillEnabled = false
+local LoopKillHB = nil
+RagdollGroup:AddDivider("Kill Mode 追加機能")
+RagdollGroup:AddToggle("KillMode_XocuKill", {
+    Text = "XOCU Kill",
+    Default = false,
+    Callback = function(arg)
+        LoopKillEnabled = arg
+        if arg then
+            LoopKillHB = RunService.Heartbeat:Connect(function()
+                if not LoopKillEnabled or not selectedTargetPlayerObj then return end
+                local target = selectedTargetPlayerObj
+                local tChar = target and target.Character
+                local tRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                local tHum = tChar and tChar:FindFirstChild("Humanoid")
+                local tHead = tChar and tChar:FindFirstChild("Head")
+                if not (target and tRoot and tHum and tHead) then return end
+                if XOCU_isTooHigh(target) then return end
+                if tHum:GetState() == Enum.HumanoidStateType.Dead then return end
+                local c = LocalPlayer.Character
+                local hrp = c and c:FindFirstChild("HumanoidRootPart")
+                if not (c and hrp) then return end
+                if not c:GetAttribute("SavingOriginalPos") then XOCU_saveOriginalPos() end
+                c:SetAttribute("SavingOriginalPos", true)
+                getgenv().originalFallenHeight = Workspace.FallenPartsDestroyHeight
+                Workspace.FallenPartsDestroyHeight = 0/0
+                local originalPos = XOCU_getOriginalPos()
+                if originalPos then cameraAnchor:attach(originalPos) end
+                hrp:PivotTo(CFrame.new(tRoot.Position + XOCU_TELEPORT_OFFSET))
+                XOCU_setNoCollideChar(tChar)
+                replicatedStorage.GrabEvents.SetNetworkOwner:FireServer(tRoot, tRoot.CFrame)
+                task.wait(0.05)
+                replicatedStorage.GrabEvents.DestroyGrabLine:FireServer(tRoot)
+                task.wait(0.05)
+                if tHead:FindFirstChild("PartOwner") and tHead.PartOwner.Value == LocalPlayer.Name then
+                    task.wait(0.05)
+                    XOCU_modifyTarget(tRoot, tHum)
+                end
+                XOCU_scheduleReturnHome()
+            end)
+        else
+            if LoopKillHB then LoopKillHB:Disconnect() LoopKillHB = nil end
+            cameraAnchor:detach()
+        end
+    end,
+})
+
+-- ---------- Blobman Kill (XOCU ソースそのまま) ----------
+local BlobKillEnabled = false
+RagdollGroup:AddToggle("KillMode_BlobmanKill", {
+    Text = "Blobman Kill",
+    Default = false,
+    Callback = function(arg)
+        BlobKillEnabled = arg
+        if arg then
+            task.spawn(function()
+                while BlobKillEnabled do
+                    task.wait(0.01)
+                    local v28 = selectedTargetPlayerObj
+                    local myChar = LocalPlayer.Character
+                    local myHum = myChar and myChar:FindFirstChild("Humanoid")
+                    if not (myHum and myHum.SeatPart and myHum.SeatPart.Parent
+                        and myHum.SeatPart.Parent:FindFirstChild("HumanoidCreature")) then
+                        task.wait(0.3); continue
+                    end
+                    local parent = myHum.SeatPart.Parent
+                    parent.HumanoidCreature:ChangeState(2)
+                    local grabScript = parent:FindFirstChild("BlobmanSeatAndOwnerScript")
+                    local blobHRP    = parent:FindFirstChild("HumanoidRootPart")
+                    local leftDet    = parent:FindFirstChild("LeftDetector")
+                    if not (grabScript and blobHRP and leftDet) then task.wait(0.3); continue end
+                    local cGrab    = grabScript:FindFirstChild("CreatureGrab")
+                    local cRelease = grabScript:FindFirstChild("CreatureRelease")
+                    local leftWeld = leftDet:FindFirstChild("LeftWeld")
+                    if not (cGrab and cRelease and leftWeld) then task.wait(0.3); continue end
+                    leftWeld.Enabled = false
+                    if v28 and v28.Character then
+                        local v32, v33, v34 = GetHRH(v28.Character)
+                        if v32 and v33 and v34 and v34.Health > 0 then
+                            local saveCF = blobHRP.CFrame
+                            local startT = tick()
+                            while true do
+                                task.wait()
+                                Teleport(blobHRP, v33.CFrame, CFrame.new(0, 5, 20))
+                                cGrab:FireServer(leftDet, v33, leftWeld)
+                                local done = not BlobKillEnabled
+                                    or not myHum.SeatPart or myHum.SeatPart.Parent ~= parent
+                                    or not v33 or not v34 or v34.Health <= 0
+                                    or not leftDet or not leftWeld
+                                    or (leftWeld.Attachment0 and leftWeld.Attachment0.Parent == v33)
+                                    or tick() - startT > 1.5
+                                if not done then continue end
+                                break
+                            end
+                            if myHum.SeatPart and myHum.SeatPart.Parent == parent
+                                and leftWeld.Attachment0 and leftWeld.Attachment0.Parent == v33
+                                and v34 and v34.Health > 0 then
+                                cRelease:FireServer(leftWeld)
+                                v34:ChangeState("Dead")
+                            else
+                                task.wait(1.5)
+                            end
+                            if blobHRP then Teleport(blobHRP, saveCF, CFrame.new(0, 0, 0)) end
+                        end
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+-- ---------- Loop Target Kill (Nil'e ソースそのまま) ----------
+local LoopTargetEnabled = false
+RagdollGroup:AddToggle("KillMode_NileLoopKill", {
+    Text = "Loop Target Kill (Nil'e)",
+    Default = false,
+    Callback = function(arg)
+        LoopTargetEnabled = arg
+        local v27, v28
+        task.spawn(function()
+    while LoopTargetEnabled do
+        local target = selectedTargetPlayerObj
+        if not target then task.wait(0.5); continue end
+        local myChar = LocalPlayer.Character
+        if myChar and myChar.Parent then
+            local v30, v31, v32 = GetHRH(myChar)
+                    if v30 and v31 and v32 and v32.Health > 0 and target and target.Character
+                        and target.InPlot and not target.InPlot.Value then
+                        local v33, v34, v35 = GetHRH(target.Character)
+                        if v33 and v34 and v35 and v35.Health > 0 then
+                            local cFrame = v31.CFrame
+                            local fpdh = Workspace.FallenPartsDestroyHeight
+                            local startT = tick()
+                            while true do
+                                task.wait()
+                                Teleport(v31, v33.CFrame, CFrame.new(0, -1.5, 3))
+                                v27 = Ownerboat(v33)
+                                if not (not LoopTargetEnabled or not v31 or not v33 or not v35 or v35.Health <= 0 or v27 or tick() - startT > 1.5) then
+                                    continue
+                                end
+                                break
+                            end
+                            if v31 then Teleport(v31, cFrame, CFrame.new(0, 0, 0)) end
+                            if v27 then
+                                Teleport(v34, CFrame.new(0, -50000, 0), CFrame.new(0, 0, 0))
+                                task.wait(0.1)
+                                Workspace.FallenPartsDestroyHeight = -45000
+                                task.wait()
+                                Workspace.FallenPartsDestroyHeight = fpdh
+                            end
+                            task.wait(0.4)
+                        end
+                    end
+                end
+                task.wait(0.05)
+            end
+        end)
+    end,
 })
 
 -- =====================================================
