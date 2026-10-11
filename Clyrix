@@ -62,7 +62,7 @@ local Tabs = {
     Whitelist = Window:AddTab("Whitelist", "user-check"),
     Notify = Window:AddTab("通知", "bell"),
     Visuals = Window:AddTab("Visuals", "eye"),
-    Credits = Window:AddTab("Dev", "users"),
+    Dev = Window:AddTab("Dev", "users"),
     UISettings = Window:AddTab("UI Settings", "settings"),
 }
 
@@ -6237,6 +6237,10 @@ task.spawn(function()
         pcall(tryInject)
     end
 end)
+
+local DevTestGroup = Tabs.Dev:AddLeftGroupbox("Test", "user")
+DevTestGroup:AddLabel("Hello")
+
 -- =====================================================
 -- UI Settings
 -- =====================================================
