@@ -61,6 +61,7 @@ local Tabs = {
     Server = Window:AddTab("Server", "server"),
     Whitelist = Window:AddTab("Whitelist", "user-check"),
     Notify = Window:AddTab("Notify", "bell"),
+    Fun = Window:AddTab("Fun", "gamepad-2"),
     Visuals = Window:AddTab("Visuals", "eye"),
     UISettings = Window:AddTab("UI Settings", "settings"),
 }
