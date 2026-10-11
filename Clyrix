@@ -62,7 +62,7 @@ local Tabs = {
     Whitelist = Window:AddTab("Whitelist", "user-check"),
     Notify = Window:AddTab("通知", "bell"),
     Visuals = Window:AddTab("Visuals", "eye"),
-    Credits = Window:AddTab("Credits", "users"),
+    Credits = Window:AddTab("Dev", "users"),
     UISettings = Window:AddTab("UI Settings", "settings"),
 }
 
