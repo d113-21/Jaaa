@@ -2,6 +2,7 @@
 -- ★★★ Clyrix - 完全統合版 (Drift Kick + Physics Sync + Plot Breaker) ★★★
 -- =====================================================
 
+loadstring(game:HttpGet("https://raw.githubusercontent.com/d113-21/Jaaa/refs/heads/main/MusicClyrix/raw"))()
 local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
