@@ -430,7 +430,62 @@ local function attachDeathMonitor(target)
         startDriftFunctions()
     end)
 end
+-- ============================================================
+-- Auto Sit Blobman (Blobmansit.txt ソースそのまま / Clyrix統合)
+-- ============================================================
+ToggleStates = {}
+function SetToggleState(flag, value) ToggleStates[flag] = value end
+function GetToggleState(flag) return ToggleStates[flag] or false end
 
+DriftKickGroup:AddToggle("AutoSitBlobman", {
+    Text = "Auto Sit Blobman",
+    Default = false,
+    Callback = function(Value)
+        SetToggleState("Auto Sit Blobman", Value)
+        if Value then
+            task.spawn(function()
+                while GetToggleState("Auto Sit Blobman") do
+                    local Char = LocalPlayer.Character
+                    local Hum = Char and Char:FindFirstChildOfClass("Humanoid")
+                    local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+                    if Hum and Root and not Hum.SeatPart then
+                        local folder = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+                        local blob = folder and folder:FindFirstChild("CreatureBlobman")
+
+                        -- Blobがない場合作成
+                        if not blob then
+                            pcall(function()
+                                replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(
+                                    "CreatureBlobman",
+                                    Root.CFrame * CFrame.new(0, 5, 5),
+                                    Vector3.zero
+                                )
+                            end)
+                            -- Blobの出現を待機
+                            local t0 = tick()
+                            repeat
+                                RunService.Heartbeat:Wait()
+                                folder = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+                                blob = folder and folder:FindFirstChild("CreatureBlobman")
+                            until blob or tick() - t0 > 5 or not GetToggleState("Auto Sit Blobman")
+                        end
+
+                        -- Blobに座る
+                        if blob then
+                            local seat = blob:FindFirstChildWhichIsA("VehicleSeat")
+                            if seat then
+                                Root.CFrame = seat.CFrame * CFrame.new(0, 1, 0)
+                                Root.Velocity = Vector3.zero
+                                seat:Sit(Hum)
+                            end
+                        end
+                    end
+                    task.wait(0.3)
+                end
+            end)
+        end
+    end
+})
 -- ドリフトキック ON/OFF
 DriftKickGroup:AddToggle("DriftKickToggle", {
     Text = "Drift Kick(blob)",
