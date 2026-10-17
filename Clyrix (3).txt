@@ -61,7 +61,7 @@ local Tabs = {
     Server = Window:AddTab("Server", "server"),
     Whitelist = Window:AddTab("Whitelist", "user-check"),
     Notify = Window:AddTab("Notify","bell"),
-    
+Fun = Window:AddTab("Fun", "gamepad-2"),
     Visuals = Window:AddTab("Visuals", "eye"),
     UISettings = Window:AddTab("UI Settings", "settings"),
 }
@@ -6379,7 +6379,482 @@ ClyrixTimeGroup:AddButton({
         ClyrixTimeLighting.TimeOfDay = ClyrixTimeOriginalOfDay
     end,
 })
+-- =====================================================
+-- Fun タブ: Poses (おんぶ.txt ソース統合)
+-- =====================================================
+function InitPosesTab()
+    -- ============================================================
+    -- Services
+    -- ============================================================
+    local PosesPlayers = game:GetService("Players")
+    local PosesReplicatedStorage = game:GetService("ReplicatedStorage")
+    local PosesRunService = game:GetService("RunService")
+    local PosesWorkspace = game:GetService("Workspace")
 
+    local PosesLocalPlayer = PosesPlayers.LocalPlayer
+    local PosesGrabEvents = PosesReplicatedStorage:WaitForChild("GrabEvents")
+    local PosesSetNetworkOwner = PosesGrabEvents:WaitForChild("SetNetworkOwner")
+
+    local posesChar = PosesLocalPlayer.Character or PosesLocalPlayer.CharacterAdded:Wait()
+    local posesToysFolder = PosesWorkspace:FindFirstChild(PosesLocalPlayer.Name .. "SpawnedInToys")
+
+    PosesLocalPlayer.CharacterAdded:Connect(function(c)
+        posesChar = c
+        task.wait(0.25)
+        posesToysFolder = PosesWorkspace:WaitForChild(PosesLocalPlayer.Name .. "SpawnedInToys", 5)
+    end)
+
+    -- ============================================================
+    -- Helper Functions (original source)
+    -- ============================================================
+    local function PosesSpawnToy(toyName, cframe)
+        task.spawn(function()
+            PosesReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(toyName, cframe, Vector3.zero)
+        end)
+    end
+
+    local function PosesGetPlot()
+        if not PosesWorkspace.PlotItems.PlayersInPlots:FindFirstChild(PosesLocalPlayer.Name) then
+            return false
+        end
+        for _, plot in PosesWorkspace.Plots:GetChildren() do
+            local plotSign = plot:FindFirstChild("PlotSign")
+            local thisPlotsOwners = plotSign and plotSign:FindFirstChild("ThisPlotsOwners")
+            if thisPlotsOwners then
+                for _, owner in thisPlotsOwners:GetChildren() do
+                    if owner.Value == PosesLocalPlayer.Name then
+                        local plotItems = PosesWorkspace.PlotItems:FindFirstChild(plot.Name)
+                        if plotItems then
+                            return true, plotItems
+                        end
+                    end
+                end
+            end
+        end
+        return false
+    end
+
+    local function PosesDestroyT(toy)
+        PosesReplicatedStorage.MenuToys.DestroyToy:FireServer(toy or posesToysFolder:FindFirstChildWhichIsA("Model"))
+    end
+
+    -- ============================================================
+    -- State Variables (original source)
+    -- ============================================================
+    local selectedPlayerForPoses = nil
+    local foodPlate = nil
+    local targetCharacter = nil
+    local loopActive = true
+    local useClone = false
+
+    local n13, n14, n15 = 0, 1.5, 0
+    local n16, n17, n18 = 0, 10, 0
+    local n19, n20, n21 = -1.5, 0, 0
+    local n22, n23, n24 = 1.5, 0, 0
+    local n25, n26, n27 = -0.5, -2, 0
+    local n28, n29, n30 = 0.5, -2, 0
+    local n31, n32, n33 = 0, 0, 0
+    local n34, n35, n36 = 0, 0, 0
+    local n37, n38, n39 = 0, 0, 0
+    local n40, n41, n42 = 0, 0, 0
+    local n43, n44, n45 = 0, 0, 0
+    local n46, n47, n48 = 0, 0, 0
+
+    -- ============================================================
+    -- UI
+    -- ============================================================
+    local PosesSettingGroup = Tabs.Fun:AddLeftGroupbox("setting", "settings")
+    local PosesTargetGroup = Tabs.Fun:AddRightGroupbox("target", "target")
+
+    local poseSliders = {}
+
+    -- HEAD
+    PosesSettingGroup:AddDivider("Head")
+    poseSliders.HeadRotX    = PosesSettingGroup:AddSlider("SliderHeadRotX",    {Text = "Head Rot X",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n31 = v end})
+    poseSliders.HeadRotY    = PosesSettingGroup:AddSlider("SliderHeadRotY",    {Text = "Head Rot Y",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n32 = v end})
+    poseSliders.HeadRotZ    = PosesSettingGroup:AddSlider("SliderHeadRotZ",    {Text = "Head Rot Z",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n33 = v end})
+    poseSliders.HeadOffsetX = PosesSettingGroup:AddSlider("SliderHeadOffsetX", {Text = "Head Offset X", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n13 = v end})
+    poseSliders.HeadOffsetY = PosesSettingGroup:AddSlider("SliderHeadOffsetY", {Text = "Head Offset Y", Default = 1.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n14 = v end})
+    poseSliders.HeadOffsetZ = PosesSettingGroup:AddSlider("SliderHeadOffsetZ", {Text = "Head Offset Z", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n15 = v end})
+
+    -- TORSO
+    PosesSettingGroup:AddDivider("Torso")
+    poseSliders.TorsoRotX    = PosesSettingGroup:AddSlider("SliderTorsoRotX",    {Text = "Torso Rot X",    Default = 0,  Min = -180, Max = 180, Rounding = 0, Callback = function(v) n34 = v end})
+    poseSliders.TorsoRotY    = PosesSettingGroup:AddSlider("SliderTorsoRotY",    {Text = "Torso Rot Y",    Default = 0,  Min = -180, Max = 180, Rounding = 0, Callback = function(v) n35 = v end})
+    poseSliders.TorsoRotZ    = PosesSettingGroup:AddSlider("SliderTorsoRotZ",    {Text = "Torso Rot Z",    Default = 0,  Min = -180, Max = 180, Rounding = 0, Callback = function(v) n36 = v end})
+    poseSliders.TorsoOffsetX = PosesSettingGroup:AddSlider("SliderTorsoOffsetX", {Text = "Torso Offset X", Default = 0,  Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n16 = v end})
+    poseSliders.TorsoOffsetY = PosesSettingGroup:AddSlider("SliderTorsoOffsetY", {Text = "Torso Offset Y", Default = 10, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n17 = v end})
+    poseSliders.TorsoOffsetZ = PosesSettingGroup:AddSlider("SliderTorsoOffsetZ", {Text = "Torso Offset Z", Default = 0,  Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n18 = v end})
+
+    -- LEFT ARM
+    PosesSettingGroup:AddDivider("Left Arm")
+    poseSliders.LARotX    = PosesSettingGroup:AddSlider("SliderLARotX",    {Text = "Left Arm Rot X",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n37 = v end})
+    poseSliders.LARotY    = PosesSettingGroup:AddSlider("SliderLARotY",    {Text = "Left Arm Rot Y",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n38 = v end})
+    poseSliders.LARotZ    = PosesSettingGroup:AddSlider("SliderLARotZ",    {Text = "Left Arm Rot Z",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n39 = v end})
+    poseSliders.LAOffsetX = PosesSettingGroup:AddSlider("SliderLAOffsetX", {Text = "Left Arm Offset X", Default = -1.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n19 = v end})
+    poseSliders.LAOffsetY = PosesSettingGroup:AddSlider("SliderLAOffsetY", {Text = "Left Arm Offset Y", Default = 0,    Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n20 = v end})
+    poseSliders.LAOffsetZ = PosesSettingGroup:AddSlider("SliderLAOffsetZ", {Text = "Left Arm Offset Z", Default = 0,    Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n21 = v end})
+
+    -- RIGHT ARM
+    PosesSettingGroup:AddDivider("Right Arm")
+    poseSliders.RARotX    = PosesSettingGroup:AddSlider("SliderRARotX",    {Text = "Right Arm Rot X",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n40 = v end})
+    poseSliders.RARotY    = PosesSettingGroup:AddSlider("SliderRARotY",    {Text = "Right Arm Rot Y",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n41 = v end})
+    poseSliders.RARotZ    = PosesSettingGroup:AddSlider("SliderRARotZ",    {Text = "Right Arm Rot Z",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n42 = v end})
+    poseSliders.RAOffsetX = PosesSettingGroup:AddSlider("SliderRAOffsetX", {Text = "Right Arm Offset X", Default = 1.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n22 = v end})
+    poseSliders.RAOffsetY = PosesSettingGroup:AddSlider("SliderRAOffsetY", {Text = "Right Arm Offset Y", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n23 = v end})
+    poseSliders.RAOffsetZ = PosesSettingGroup:AddSlider("SliderRAOffsetZ", {Text = "Right Arm Offset Z", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n24 = v end})
+
+    -- LEFT LEG
+    PosesSettingGroup:AddDivider("Left Leg")
+    poseSliders.LLRotX    = PosesSettingGroup:AddSlider("SliderLLRotX",    {Text = "Left Leg Rot X",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n43 = v end})
+    poseSliders.LLRotY    = PosesSettingGroup:AddSlider("SliderLLRotY",    {Text = "Left Leg Rot Y",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n44 = v end})
+    poseSliders.LLRotZ    = PosesSettingGroup:AddSlider("SliderLLRotZ",    {Text = "Left Leg Rot Z",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n45 = v end})
+    poseSliders.LLOffsetX = PosesSettingGroup:AddSlider("SliderLLOffsetX", {Text = "Left Leg Offset X", Default = -0.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n25 = v end})
+    poseSliders.LLOffsetY = PosesSettingGroup:AddSlider("SliderLLOffsetY", {Text = "Left Leg Offset Y", Default = -2,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n26 = v end})
+    poseSliders.LLOffsetZ = PosesSettingGroup:AddSlider("SliderLLOffsetZ", {Text = "Left Leg Offset Z", Default = 0,    Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n27 = v end})
+
+    -- RIGHT LEG
+    PosesSettingGroup:AddDivider("Right Leg")
+    poseSliders.RLRotX    = PosesSettingGroup:AddSlider("SliderRLRotX",    {Text = "Right Leg Rot X",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n46 = v end})
+    poseSliders.RLRotY    = PosesSettingGroup:AddSlider("SliderRLRotY",    {Text = "Right Leg Rot Y",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n47 = v end})
+    poseSliders.RLRotZ    = PosesSettingGroup:AddSlider("SliderRLRotZ",    {Text = "Right Leg Rot Z",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n48 = v end})
+    poseSliders.RLOffsetX = PosesSettingGroup:AddSlider("SliderRLOffsetX", {Text = "Right Leg Offset X", Default = 0.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n28 = v end})
+    poseSliders.RLOffsetY = PosesSettingGroup:AddSlider("SliderRLOffsetY", {Text = "Right Leg Offset Y", Default = -2,  Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n29 = v end})
+    poseSliders.RLOffsetZ = PosesSettingGroup:AddSlider("SliderRLOffsetZ", {Text = "Right Leg Offset Z", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n30 = v end})
+
+    -- ============================================================
+    -- Target Groupbox
+    -- ============================================================
+    local function PosesGetPlayerList()
+        local list = {}
+        for _, p in PosesPlayers:GetPlayers() do
+            if p ~= PosesLocalPlayer then
+                table.insert(list, p.DisplayName .. " [" .. p.Name .. "]")
+            end
+        end
+        return list
+    end
+
+    PosesTargetGroup:AddDropdown("SelectPosePlayer", {
+        Text = "Select Player",
+        Default = "",
+        Values = PosesGetPlayerList(),
+        Callback = function(option)
+            local val = option
+            if val and val ~= "" then
+                local match = tostring(val):match("%[(.-)%]")
+                if match then
+                    selectedPlayerForPoses = PosesPlayers:FindFirstChild(match)
+                end
+            else
+                selectedPlayerForPoses = nil
+            end
+        end,
+    })
+
+    PosesTargetGroup:AddDropdown("PosesPreset", {
+        Text = "Poses",
+        Default = "HeadSit",
+        Values = { "HeadSit", "Penis", "Blowjob" },
+        Callback = function(sel)
+            if sel == "HeadSit" then
+                poseSliders.HeadOffsetX:SetValue(0);   poseSliders.HeadOffsetY:SetValue(1.5); poseSliders.HeadOffsetZ:SetValue(-0.2)
+                poseSliders.TorsoOffsetX:SetValue(0);  poseSliders.TorsoOffsetY:SetValue(2);  poseSliders.TorsoOffsetZ:SetValue(0.75)
+                poseSliders.LAOffsetX:SetValue(-1);    poseSliders.LAOffsetY:SetValue(0.4);   poseSliders.LAOffsetZ:SetValue(-0.75)
+                poseSliders.RAOffsetX:SetValue(1);     poseSliders.RAOffsetY:SetValue(0.3);   poseSliders.RAOffsetZ:SetValue(-0.75)
+                poseSliders.LLOffsetX:SetValue(-0.8);  poseSliders.LLOffsetY:SetValue(-1.2);  poseSliders.LLOffsetZ:SetValue(-0.8)
+                poseSliders.RLOffsetX:SetValue(1);     poseSliders.RLOffsetY:SetValue(-1.2);  poseSliders.RLOffsetZ:SetValue(-0.85)
+                poseSliders.HeadRotX:SetValue(-17);    poseSliders.HeadRotY:SetValue(0);      poseSliders.HeadRotZ:SetValue(0)
+                poseSliders.TorsoRotX:SetValue(0);     poseSliders.TorsoRotY:SetValue(0);     poseSliders.TorsoRotZ:SetValue(0)
+                poseSliders.LARotX:SetValue(69);       poseSliders.LARotY:SetValue(-25);      poseSliders.LARotZ:SetValue(34)
+                poseSliders.RARotX:SetValue(45);       poseSliders.RARotY:SetValue(46);       poseSliders.RARotZ:SetValue(-23)
+                poseSliders.LLRotX:SetValue(-99);      poseSliders.LLRotY:SetValue(180);      poseSliders.LLRotZ:SetValue(157)
+                poseSliders.RLRotX:SetValue(-99);      poseSliders.RLRotY:SetValue(-180);     poseSliders.RLRotZ:SetValue(-153)
+            elseif sel == "Penis" then
+                poseSliders.TorsoOffsetX:SetValue(0);  poseSliders.TorsoOffsetY:SetValue(-0.8); poseSliders.TorsoOffsetZ:SetValue(-6.5)
+                poseSliders.TorsoRotX:SetValue(-90);   poseSliders.TorsoRotY:SetValue(0);      poseSliders.TorsoRotZ:SetValue(0)
+                poseSliders.HeadOffsetX:SetValue(0);   poseSliders.HeadOffsetY:SetValue(1.5);  poseSliders.HeadOffsetZ:SetValue(0)
+                poseSliders.HeadRotX:SetValue(90);     poseSliders.HeadRotY:SetValue(0);       poseSliders.HeadRotZ:SetValue(0)
+                poseSliders.LAOffsetX:SetValue(0);     poseSliders.LAOffsetY:SetValue(-2);     poseSliders.LAOffsetZ:SetValue(0)
+                poseSliders.RAOffsetX:SetValue(0);     poseSliders.RAOffsetY:SetValue(-4);     poseSliders.RAOffsetZ:SetValue(0)
+                poseSliders.LLOffsetX:SetValue(-1);    poseSliders.LLOffsetY:SetValue(-5.5);   poseSliders.LLOffsetZ:SetValue(0)
+                poseSliders.LLRotX:SetValue(0);        poseSliders.LLRotY:SetValue(0);         poseSliders.LLRotZ:SetValue(-90)
+                poseSliders.RLOffsetX:SetValue(1);     poseSliders.RLOffsetY:SetValue(-5.5);   poseSliders.RLOffsetZ:SetValue(0)
+                poseSliders.RLRotX:SetValue(0);        poseSliders.RLRotY:SetValue(0);         poseSliders.RLRotZ:SetValue(90)
+                poseSliders.LARotX:SetValue(0);        poseSliders.LARotY:SetValue(0);         poseSliders.LARotZ:SetValue(0)
+                poseSliders.RARotX:SetValue(0);        poseSliders.RARotY:SetValue(0);         poseSliders.RARotZ:SetValue(0)
+            elseif sel == "Blowjob" then
+                poseSliders.HeadRotX:SetValue(-1);     poseSliders.HeadRotY:SetValue(0);       poseSliders.HeadRotZ:SetValue(9)
+                poseSliders.TorsoRotX:SetValue(22);    poseSliders.TorsoRotY:SetValue(180);    poseSliders.TorsoRotZ:SetValue(0)
+                poseSliders.LARotX:SetValue(137);      poseSliders.LARotY:SetValue(-21);       poseSliders.LARotZ:SetValue(20)
+                poseSliders.RARotX:SetValue(137);      poseSliders.RARotY:SetValue(3);         poseSliders.RARotZ:SetValue(-20)
+                poseSliders.LLRotX:SetValue(-72);      poseSliders.LLRotY:SetValue(17);        poseSliders.LLRotZ:SetValue(-18)
+                poseSliders.RLRotX:SetValue(-69);      poseSliders.RLRotY:SetValue(-35);       poseSliders.RLRotZ:SetValue(20)
+                poseSliders.HeadOffsetX:SetValue(0);   poseSliders.HeadOffsetY:SetValue(1.5);  poseSliders.HeadOffsetZ:SetValue(0)
+                poseSliders.TorsoOffsetX:SetValue(0);  poseSliders.TorsoOffsetY:SetValue(-1.9); poseSliders.TorsoOffsetZ:SetValue(-2)
+                poseSliders.LAOffsetX:SetValue(-1.3);  poseSliders.LAOffsetY:SetValue(1.2);    poseSliders.LAOffsetZ:SetValue(-0.5)
+                poseSliders.RAOffsetX:SetValue(1.3);   poseSliders.RAOffsetY:SetValue(1.1);    poseSliders.RAOffsetZ:SetValue(-0.4)
+                poseSliders.LLOffsetX:SetValue(-0.8);  poseSliders.LLOffsetY:SetValue(-1.3);   poseSliders.LLOffsetZ:SetValue(0.8)
+                poseSliders.RLOffsetX:SetValue(0.8);   poseSliders.RLOffsetY:SetValue(-1.2);   poseSliders.RLOffsetZ:SetValue(0.8)
+            end
+        end,
+    })
+
+    PosesTargetGroup:AddToggle("CloneOption", {
+        Text = "Use Clone",
+        Default = false,
+        Callback = function(arg)
+            useClone = arg
+        end,
+    })
+
+    -- ============================================================
+    -- Apply Pose (original logic)
+    -- ============================================================
+    PosesTargetGroup:AddDivider("Apply")
+
+    PosesTargetGroup:AddToggle("LoopPosePlayer", {
+        Text = "Apply Pose",
+        Default = false,
+        Callback = function(arg)
+            if arg then
+                loopActive = true
+                task.spawn(function()
+                    while loopActive and PosesRunService.RenderStepped:Wait() do
+                        local humanoidRootPart = posesChar and posesChar:FindFirstChild("HumanoidRootPart")
+                        local humanoid = posesChar and posesChar:FindFirstChild("Humanoid")
+
+                        if not useClone then
+                            local PlayerForPosing = selectedPlayerForPoses
+                            if PlayerForPosing then
+                                targetCharacter = PlayerForPosing.Character
+                            end
+                        elseif posesToysFolder and posesToysFolder:FindFirstChild("YouDecoy") and useClone then
+                            targetCharacter = posesToysFolder:FindFirstChild("YouDecoy")
+                        else
+                            ClyrixNotify("Nil'e", "Spawn Clone", 5)
+                            if Toggles.LoopPosePlayer then Toggles.LoopPosePlayer:SetValue(false) end
+                            return
+                        end
+
+                        if targetCharacter and humanoidRootPart and humanoid and humanoid.Health > 0 and loopActive then
+                            if not posesToysFolder:FindFirstChild("RagdollForPoses") then
+                                for _, v27 in posesToysFolder:GetChildren() do
+                                    if v27.Name == "FoodPlate" then
+                                        v27.Name = "idi nahui otsyuda"
+                                        PosesDestroyT(v27)
+                                    end
+                                end
+
+                                while true do
+                                    PosesRunService.RenderStepped:Wait()
+                                    if not (PosesLocalPlayer.CanSpawnToy.Value and not PosesLocalPlayer.InPlot.Value) then
+                                        continue
+                                    end
+                                    break
+                                end
+
+                                PosesSpawnToy("FoodPlate", humanoidRootPart.CFrame * CFrame.new(0, 10, 20))
+                                foodPlate = posesToysFolder:WaitForChild("FoodPlate", 1)
+
+                                if foodPlate then
+                                    local soundPart = foodPlate:WaitForChild("SoundPart", 1)
+                                    if soundPart then
+                                        while true do
+                                            PosesRunService.RenderStepped:Wait()
+                                            PosesSetNetworkOwner:FireServer(soundPart, soundPart.CFrame)
+                                            local flag9 = not foodPlate or not soundPart
+                                            local partOwner
+                                            if flag9 then
+                                                partOwner = flag9
+                                            else
+                                                partOwner = soundPart:FindFirstChild("PartOwner")
+                                                if partOwner then
+                                                    partOwner = soundPart:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                                end
+                                            end
+                                            if not (partOwner or not humanoidRootPart or not humanoid or humanoid.Health <= 0 or not loopActive) then
+                                                continue
+                                            end
+                                            break
+                                        end
+
+                                        local v27 = foodPlate
+                                        local partOwner
+                                        if foodPlate then partOwner = soundPart else partOwner = v27 end
+                                        partOwner = partOwner and soundPart:FindFirstChild("PartOwner")
+                                        if partOwner then
+                                            partOwner = soundPart:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                        end
+
+                                        if partOwner then
+                                            soundPart.CanCollide = false
+                                            soundPart.CanQuery = false
+                                            soundPart.Transparency = 1
+                                            soundPart.CFrame = CFrame.new(0, 670000, 0)
+                                            local bodyPosition = Instance.new("BodyPosition", soundPart)
+                                            bodyPosition.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                                            bodyPosition.D = 100
+                                            bodyPosition.Position = Vector3.new(0, 670000, 0)
+                                            foodPlate.Name = "RagdollForPoses"
+
+                                            task.spawn(function()
+                                                local foodPlate2 = PosesLocalPlayer.PlayerGui.MenuGui.Menu.TabContents.ToyDestroy
+                                                    .Contents:WaitForChild("FoodPlate", 1)
+                                                if foodPlate2 then
+                                                    foodPlate2.Name = "For Poses"
+                                                    foodPlate2.ViewItemButton.Season.Visible = true
+                                                    foodPlate2.ViewItemButton.Season.Text = "For Poses"
+                                                end
+                                            end)
+                                        end
+                                    end
+                                end
+                            else
+                                local partOwner = posesToysFolder:FindFirstChild("RagdollForPoses") and
+                                    posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart") and
+                                    posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart"):FindFirstChild("PartOwner")
+                                if partOwner then
+                                    partOwner = posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart")
+                                        :FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                end
+
+                                if partOwner then
+                                    local humanoidRootPart2 = targetCharacter:FindFirstChild("HumanoidRootPart")
+                                    local humanoid2 = targetCharacter:FindFirstChild("Humanoid")
+                                    local head = targetCharacter:FindFirstChild("Head")
+
+                                    if humanoidRootPart2 and humanoid2 and humanoid2.Health > 0 and head and loopActive then
+                                        local cFrame = humanoidRootPart.CFrame
+
+                                        if (humanoidRootPart.Position - humanoidRootPart2.Position).Magnitude > 25 and loopActive then
+                                            while true do
+                                                humanoidRootPart.CFrame = humanoidRootPart2.CFrame * CFrame.new(0, 0, 1.5)
+                                                humanoidRootPart.Velocity = Vector3.zero
+                                                humanoidRootPart.RotVelocity = Vector3.zero
+                                                PosesRunService.RenderStepped:Wait()
+                                                PosesSetNetworkOwner:FireServer(humanoidRootPart2, humanoidRootPart2.CFrame)
+                                                local flag9 = not targetCharacter or not humanoidRootPart2 or not humanoid2 or humanoid2.Health <= 0 or not head
+                                                if not flag9 then
+                                                    flag9 = head:FindFirstChild("PartOwner")
+                                                    if flag9 then
+                                                        flag9 = head:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                                    end
+                                                end
+                                                if not (flag9 or not humanoidRootPart or not humanoid or humanoid.Health <= 0 or not loopActive) then
+                                                    continue
+                                                end
+                                                break
+                                            end
+
+                                            if humanoidRootPart then
+                                                humanoidRootPart.CFrame = cFrame
+                                                humanoidRootPart.Velocity = Vector3.zero
+                                                humanoidRootPart.RotVelocity = Vector3.zero
+                                            end
+                                            if loopActive and humanoidRootPart2 then
+                                                humanoidRootPart2.CFrame = cFrame * CFrame.new(0, 0, -5)
+                                                humanoidRootPart2.Velocity = Vector3.zero
+                                                humanoidRootPart2.RotVelocity = Vector3.zero
+                                            end
+                                        end
+
+                                        if loopActive and humanoidRootPart and humanoid and humanoid.Health > 0 and humanoidRootPart2 and humanoid2 and humanoid2.Health > 0 then
+                                            local partOwner2 = loopActive and head and head:FindFirstChild("PartOwner")
+                                            if partOwner2 then
+                                                partOwner2 = head:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                            end
+
+                                            if partOwner2 then
+                                                task.spawn(function()
+                                                    pcall(function()
+                                                        if humanoid2:FindFirstChild("Ragdolled") and not humanoid2:FindFirstChild("Ragdolled").Value then
+                                                            task.wait(0.05)
+                                                            posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart").CFrame =
+                                                                targetCharacter:FindFirstChild("Torso").CFrame * CFrame.new(0, 0.5, 0) *
+                                                                CFrame.Angles(1.5707963267948966, 0, 0)
+                                                            task.wait(0.1)
+                                                            posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart").CFrame =
+                                                                CFrame.new(0, 670000, 0)
+                                                        end
+                                                    end)
+                                                    pcall(function()
+                                                        humanoidRootPart2.CanCollide = false
+                                                        head.CanCollide = false
+                                                        targetCharacter:FindFirstChild("Torso").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Left Arm"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Right Arm"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Left Leg"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Right Leg"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                    end)
+                                                end)
+
+                                                pcall(function()
+                                                    targetCharacter:FindFirstChild("Torso").CFrame = humanoidRootPart.CFrame *
+                                                        CFrame.new(n16, n17, n18) * CFrame.Angles(math.rad(n34), math.rad(n35), math.rad(n36))
+                                                    head.CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n13, n14, n15) * CFrame.Angles(math.rad(n31), math.rad(n32), math.rad(n33))
+                                                    targetCharacter:FindFirstChild("Left Arm").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n19, n20, n21) * CFrame.Angles(math.rad(n37), math.rad(n38), math.rad(n39))
+                                                    targetCharacter:FindFirstChild("Right Arm").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n22, n23, n24) * CFrame.Angles(math.rad(n40), math.rad(n41), math.rad(n42))
+                                                    targetCharacter:FindFirstChild("Left Leg").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n25, n26, n27) * CFrame.Angles(math.rad(n43), math.rad(n44), math.rad(n45))
+                                                    targetCharacter:FindFirstChild("Right Leg").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n28, n29, n30) * CFrame.Angles(math.rad(n46), math.rad(n47), math.rad(n48))
+                                                end)
+
+                                                pcall(function()
+                                                    humanoidRootPart2.Velocity = Vector3.zero
+                                                    targetCharacter["Left Arm"].Velocity = Vector3.zero
+                                                    targetCharacter["Right Arm"].Velocity = Vector3.zero
+                                                    targetCharacter["Left Leg"].Velocity = Vector3.zero
+                                                    targetCharacter["Right Leg"].Velocity = Vector3.zero
+                                                end)
+                                            else
+                                                PosesSetNetworkOwner:FireServer(humanoidRootPart2, humanoidRootPart2.CFrame)
+                                            end
+                                        end
+                                    end
+                                else
+                                    PosesDestroyT(posesToysFolder:FindFirstChild("RagdollForPoses"))
+                                end
+                            end
+                        end
+                    end
+                end)
+            else
+                loopActive = false
+
+                if not useClone then
+                    local PlayerForPosing = selectedPlayerForPoses
+                    if PlayerForPosing then
+                        targetCharacter = PlayerForPosing.Character
+                    end
+                elseif posesToysFolder and posesToysFolder:FindFirstChild("YouDecoy") and useClone then
+                    targetCharacter = posesToysFolder:FindFirstChild("YouDecoy")
+                end
+
+                if targetCharacter then
+                    task.wait(0.1)
+                    pcall(function()
+                        PosesGrabEvents.DestroyGrabLine:FireServer(targetCharacter:FindFirstChild("HumanoidRootPart"))
+                        targetCharacter:FindFirstChild("HumanoidRootPart").CanCollide = true
+                    end)
+                end
+            end
+        end,
+    })
+
+    task.spawn(function()
+        while task.wait(3) do
+            if Options.SelectPosePlayer then
+                pcall(function() Options.SelectPosePlayer:SetValues(PosesGetPlayerList()) end)
+            end
+        end
+    end)
+end
+InitPosesTab()
 -- =====================================================
 -- UI Settings
 -- =====================================================
