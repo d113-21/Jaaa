@@ -5915,6 +5915,290 @@ NoBlobGroup:AddButton({
     end,
 })
 -- =====================================================
+-- Server タブ: Blobman (右側・ノーブロブの下)
+-- =====================================================
+ClyrixBlobGroup = Tabs.Server:AddRightGroupbox("Blobman", "user")
+
+ClyrixBlobLastSeatNotify = 0
+ClyrixBlobCurrent = nil
+ClyrixBlobKillRunning = false
+ClyrixBlobKickAllRunning = false
+
+function ClyrixBlobRequireSeated()
+    local ok = false
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local seat = hum and hum.SeatPart
+        if seat and seat:IsA("VehicleSeat") then
+            local obj = seat
+            while obj do
+                if obj:IsA("Model") and obj.Name == "CreatureBlobman" then
+                    ok = true
+                    return
+                end
+                obj = obj.Parent
+            end
+        end
+    end)
+    if ok then return true end
+    if tick() - ClyrixBlobLastSeatNotify > 2 then
+        ClyrixBlobLastSeatNotify = tick()
+        ClyrixNotify("Blobman", "Please sit on Blobman first", 3)
+    end
+    return false
+end
+
+function ClyrixBlobIsTargetable(player)
+    if not player or player == LocalPlayer then return false end
+    if _G.ClyrixWhitelist and _G.ClyrixWhitelist[player.Name] then return false end
+    return true
+end
+
+function ClyrixBlobGetSeatedBlobman()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+    local seat = humanoid.SeatPart
+    if not seat or not seat:IsA("VehicleSeat") then return nil end
+    local obj = seat
+    while obj do
+        if obj:IsA("Model") and obj.Name == "CreatureBlobman" then
+            return obj
+        end
+        obj = obj.Parent
+    end
+    return nil
+end
+
+function ClyrixBlobSpawn()
+    local seated = ClyrixBlobGetSeatedBlobman()
+    if seated then
+        ClyrixBlobCurrent = seated
+        return seated
+    end
+    if ClyrixBlobCurrent and ClyrixBlobCurrent.Parent then
+        return ClyrixBlobCurrent
+    end
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return nil end
+    local spawnPos = rootPart.CFrame * CFrame.new(0, 0, -5)
+    pcall(function()
+        replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", spawnPos, Vector3.new(0, 127, 0))
+    end)
+    local toyFolderName = LocalPlayer.Name .. "SpawnedInToys"
+    local blobman = nil
+    local startTime = tick()
+    repeat
+        local toyFolder = Workspace:FindFirstChild(toyFolderName)
+        if toyFolder then
+            blobman = toyFolder:FindFirstChild("CreatureBlobman")
+        end
+        if blobman then break end
+        task.wait()
+    until tick() - startTime > 2
+    if not blobman then return nil end
+    ClyrixBlobCurrent = blobman
+    return blobman
+end
+
+function ClyrixBlobKillPlayer(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    for _ = 1, 5 do
+        pcall(function()
+            humanoid.BreakJointsOnDeath = false
+            humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+        end)
+        if humanoid.Health <= 0 then return true end
+        task.wait(0.01)
+    end
+    return false
+end
+
+function ClyrixBlobGrabRelease(blobman, targetRoot)
+    if not blobman or not targetRoot then return end
+    pcall(function()
+        local script = blobman:FindFirstChild("BlobmanSeatAndOwnerScript")
+        if script then
+            script.CreatureGrab:FireServer(blobman.LeftDetector, targetRoot, blobman.LeftDetector.LeftWeld)
+            script.CreatureRelease:FireServer(blobman.LeftDetector.LeftWeld)
+        end
+    end)
+end
+
+function ClyrixBlobKillAll()
+    if not ClyrixBlobRequireSeated() then return end
+    local localChar = LocalPlayer.Character
+    if not localChar or not localChar:FindFirstChild("HumanoidRootPart") then return end
+    local rootPart = localChar.HumanoidRootPart
+    local blobman = ClyrixBlobSpawn()
+    if not blobman then return end
+    local targets = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if ClyrixBlobIsTargetable(player) and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(targets, player)
+        end
+    end
+    if #targets == 0 then
+        ClyrixNotify("Blobman", "No targets (whitelist active)", 3)
+        return
+    end
+    for _, player in ipairs(targets) do
+        if not ClyrixBlobKillRunning then break end
+        local targetChar = player.Character
+        if not targetChar then continue end
+        local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+        if not targetRoot then continue end
+        rootPart.CFrame = targetRoot.CFrame
+        task.wait(0.02)
+        ClyrixBlobKillPlayer(player)
+        for _ = 1, 2 do
+            ClyrixBlobGrabRelease(blobman, targetRoot)
+            task.wait(0.01)
+        end
+    end
+end
+
+function ClyrixBlobKickAll()
+    if ClyrixBlobKickAllRunning then return end
+    if not ClyrixBlobRequireSeated() then return end
+    ClyrixBlobKickAllRunning = true
+    local allPlayers = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if ClyrixBlobIsTargetable(player) then
+            table.insert(allPlayers, player)
+        end
+    end
+    if #allPlayers == 0 then
+        ClyrixNotify("Blobman", "No targets (whitelist active)", 3)
+        ClyrixBlobKickAllRunning = false
+        return
+    end
+    local char = LocalPlayer.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    if rootPart then
+        local spawnPos = rootPart.CFrame * CFrame.new(0, 0, -5)
+        pcall(function()
+            replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", spawnPos, Vector3.new(0, 127, 0))
+        end)
+    end
+    task.wait(0.5)
+    local toyFolder = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+    local currentBlob = toyFolder and toyFolder:FindFirstChild("CreatureBlobman")
+    if not currentBlob then
+        ClyrixBlobKickAllRunning = false
+        return
+    end
+    local vehicleSeat = currentBlob:FindFirstChild("VehicleSeat")
+    if vehicleSeat and LocalPlayer.Character then
+        pcall(function()
+            vehicleSeat:Sit(LocalPlayer.Character:FindFirstChildOfClass("Humanoid"))
+        end)
+    end
+    task.wait(0.3)
+    local myRoot = rootPart
+    if not myRoot then
+        ClyrixBlobKickAllRunning = false
+        return
+    end
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            myRoot.CFrame = targetRoot.CFrame
+            task.wait(0.02)
+            for i = 1, 3 do
+                pcall(function()
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld
+                    )
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureRelease:FireServer(currentBlob.LeftDetector.LeftWeld)
+                end)
+                if i < 3 then task.wait(0.08) end
+            end
+        end
+    end
+    myRoot.CFrame = CFrame.new(0, 100, 0)
+    task.wait(0.1)
+    local radius = 15
+    for i, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            local angle = math.rad((i - 1) * (360 / #allPlayers))
+            local x = radius * math.cos(angle)
+            local z = radius * math.sin(angle)
+            targetRoot.CFrame = CFrame.new(x, 110, z)
+        end
+    end
+    task.wait(0.1)
+    for _ = 1, 2 do
+        for _, targetPlayer in ipairs(allPlayers) do
+            local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
+                task.spawn(function()
+                    pcall(function()
+                        replicatedStorage.GrabEvents.SetNetworkOwner:FireServer(targetRoot, CFrame.new(targetRoot.Position))
+                        replicatedStorage.GrabEvents.DestroyGrabLine:FireServer(targetRoot)
+                    end)
+                end)
+            end
+        end
+        task.wait(0.1)
+    end
+    task.wait(0.3)
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            task.spawn(function()
+                pcall(function()
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld
+                    )
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(
+                        currentBlob.RightDetector, targetRoot, currentBlob.RightDetector.RightWeld
+                    )
+                end)
+            end)
+        end
+    end
+    task.wait(0.1)
+    myRoot.CFrame = CFrame.new(0, -50000, 0)
+    for _, part in ipairs(currentBlob:GetDescendants()) do
+        if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
+    end
+    task.wait(1)
+    ClyrixBlobKickAllRunning = false
+end
+
+ClyrixBlobGroup:AddToggle("ClyrixBlobKillAllToggle", {
+    Text = "Blobman Kill All",
+    Default = false,
+    Callback = function(v)
+        ClyrixBlobKillRunning = v
+        if v then
+            task.spawn(function()
+                while ClyrixBlobKillRunning do
+                    ClyrixBlobKillAll()
+                    task.wait(0.5)
+                end
+            end)
+        end
+    end,
+})
+
+ClyrixBlobGroup:AddButton({
+    Text = "Blobman Kick All",
+    Func = function()
+        task.spawn(ClyrixBlobKickAll)
+    end,
+})
+-- =====================================================
 -- Visuals: Image ESP
 -- =====================================================
 local EspGroup = Tabs.Visuals:AddLeftGroupbox("ESP", "eye")
