@@ -7141,6 +7141,569 @@ function InitPosesTab()
 end
 InitPosesTab()
 -- =====================================================
+-- Visuals: Shader (Sky + Snow)
+-- =====================================================
+function InitShaderTab()
+    local ShaderGroup = Tabs.Visuals:AddRightGroupbox("Shader", "cloud")
+
+    -- ============================================================
+    -- Sky Changer
+    -- ============================================================
+    local function SkyInit()
+        local LightingSvc = game:GetService("Lighting")
+        local RService = game:GetService("RunService")
+
+        local SkyPresets = {
+            ["Rainy"] = {
+                SkyboxBk = "rbxassetid://18703245834", SkyboxDn = "rbxassetid://18703243349",
+                SkyboxFt = "rbxassetid://18703240532", SkyboxLf = "rbxassetid://18703237556",
+                SkyboxRt = "rbxassetid://18703235430", SkyboxUp = "rbxassetid://18703232671",
+                ClockTime = 15, Brightness = 1.5,
+                FogColor = Color3.fromRGB(100, 110, 120), FogStart = 0, FogEnd = 800,
+                Ambient = Color3.fromRGB(80, 85, 95), OutdoorAmbient = Color3.fromRGB(90, 95, 105),
+                CCTint = Color3.fromRGB(180, 190, 200), CCSaturation = -0.2, CCContrast = 0.1, CCBrightness = -0.05,
+                AtmosDensity = 0.5, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(100, 110, 120),
+                AtmosDecay = Color3.fromRGB(50, 55, 65), AtmosGlare = 0, AtmosHaze = 3,
+            },
+            ["Storm"] = {
+                SkyboxBk = "rbxassetid://15502511288", SkyboxDn = "rbxassetid://15502508460",
+                SkyboxFt = "rbxassetid://15502510289", SkyboxLf = "rbxassetid://15502507918",
+                SkyboxRt = "rbxassetid://15502509398", SkyboxUp = "rbxassetid://15502511911",
+                ClockTime = 13, Brightness = 0.8,
+                FogColor = Color3.fromRGB(50, 55, 65), FogStart = 0, FogEnd = 500,
+                Ambient = Color3.fromRGB(40, 45, 55), OutdoorAmbient = Color3.fromRGB(50, 55, 65),
+                CCTint = Color3.fromRGB(150, 155, 165), CCSaturation = -0.4, CCContrast = 0.3, CCBrightness = -0.15,
+                AtmosDensity = 0.7, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(50, 55, 65),
+                AtmosDecay = Color3.fromRGB(30, 35, 45), AtmosGlare = 0, AtmosHaze = 4,
+            },
+            ["Sunset"] = {
+                SkyboxBk = "rbxassetid://600830446", SkyboxDn = "rbxassetid://600831635",
+                SkyboxFt = "rbxassetid://600832720", SkyboxLf = "rbxassetid://600886090",
+                SkyboxRt = "rbxassetid://600833862", SkyboxUp = "rbxassetid://600835177",
+                ClockTime = 18, Brightness = 2,
+                FogColor = Color3.fromRGB(255, 150, 100), FogStart = 0, FogEnd = 2000,
+                Ambient = Color3.fromRGB(120, 80, 60), OutdoorAmbient = Color3.fromRGB(180, 120, 90),
+                CCTint = Color3.fromRGB(255, 200, 160), CCSaturation = 0.2, CCContrast = 0.15, CCBrightness = 0.05,
+                AtmosDensity = 0.35, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(255, 170, 120),
+                AtmosDecay = Color3.fromRGB(120, 70, 50), AtmosGlare = 0.2, AtmosHaze = 2,
+            },
+            ["Night"] = {
+                SkyboxBk = "rbxassetid://12064107", SkyboxDn = "rbxassetid://12064152",
+                SkyboxFt = "rbxassetid://12064121", SkyboxLf = "rbxassetid://12063984",
+                SkyboxRt = "rbxassetid://12064115", SkyboxUp = "rbxassetid://12064131",
+                ClockTime = 0, Brightness = 1,
+                FogColor = Color3.fromRGB(20, 25, 40), FogStart = 0, FogEnd = 1500,
+                Ambient = Color3.fromRGB(30, 35, 50), OutdoorAmbient = Color3.fromRGB(40, 45, 60),
+                CCTint = Color3.fromRGB(180, 200, 255), CCSaturation = -0.1, CCContrast = 0.2, CCBrightness = -0.1,
+                AtmosDensity = 0.4, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(60, 70, 100),
+                AtmosDecay = Color3.fromRGB(20, 25, 40), AtmosGlare = 0, AtmosHaze = 2,
+            },
+            ["Space"] = {
+                SkyboxBk = "rbxassetid://159248188", SkyboxDn = "rbxassetid://159248183",
+                SkyboxFt = "rbxassetid://159248187", SkyboxLf = "rbxassetid://159248173",
+                SkyboxRt = "rbxassetid://159248192", SkyboxUp = "rbxassetid://159248176",
+                ClockTime = 0, Brightness = 1.5,
+                FogColor = Color3.fromRGB(10, 10, 20), FogStart = 0, FogEnd = 5000,
+                Ambient = Color3.fromRGB(20, 20, 40), OutdoorAmbient = Color3.fromRGB(30, 30, 50),
+                CCTint = Color3.fromRGB(200, 200, 255), CCSaturation = 0.3, CCContrast = 0.4, CCBrightness = 0,
+                AtmosDensity = 0.1, AtmosOffset = 0.25, AtmosColor = Color3.fromRGB(100, 100, 200),
+                AtmosDecay = Color3.fromRGB(50, 50, 100), AtmosGlare = 1, AtmosHaze = 0.5,
+            },
+            ["HD Realistic"] = {
+                SkyboxBk = "rbxassetid://16553658937", SkyboxDn = "rbxassetid://16553660713",
+                SkyboxFt = "rbxassetid://16553662144", SkyboxLf = "rbxassetid://16553664042",
+                SkyboxRt = "rbxassetid://16553665766", SkyboxUp = "rbxassetid://16553667750",
+                ClockTime = 14, Brightness = 3,
+                FogColor = Color3.fromRGB(200, 205, 215), FogStart = 0, FogEnd = 5000,
+                Ambient = Color3.fromRGB(80, 85, 95), OutdoorAmbient = Color3.fromRGB(150, 155, 165),
+                CCTint = Color3.fromRGB(255, 250, 245), CCSaturation = 0.1, CCContrast = 0.15, CCBrightness = 0.02,
+                AtmosDensity = 0.3, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(200, 205, 215),
+                AtmosDecay = Color3.fromRGB(110, 118, 135), AtmosGlare = 0.1, AtmosHaze = 1.5,
+            },
+            ["Snowy"] = {
+                SkyboxBk = "rbxassetid://155657655", SkyboxDn = "rbxassetid://155674246",
+                SkyboxFt = "rbxassetid://155657609", SkyboxLf = "rbxassetid://155657671",
+                SkyboxRt = "rbxassetid://155657619", SkyboxUp = "rbxassetid://155674931",
+                ClockTime = 14, Brightness = 2.5,
+                FogColor = Color3.fromRGB(220, 225, 235), FogStart = 0, FogEnd = 1500,
+                Ambient = Color3.fromRGB(180, 185, 195), OutdoorAmbient = Color3.fromRGB(220, 225, 235),
+                CCTint = Color3.fromRGB(230, 240, 255), CCSaturation = -0.15, CCContrast = 0.1, CCBrightness = 0.05,
+                AtmosDensity = 0.45, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(220, 225, 235),
+                AtmosDecay = Color3.fromRGB(150, 155, 165), AtmosGlare = 0.05, AtmosHaze = 2.5,
+            },
+            ["Horror"] = {
+                SkyboxBk = "rbxassetid://15502511288", SkyboxDn = "rbxassetid://15502508460",
+                SkyboxFt = "rbxassetid://15502510289", SkyboxLf = "rbxassetid://15502507918",
+                SkyboxRt = "rbxassetid://15502509398", SkyboxUp = "rbxassetid://15502511911",
+                ClockTime = 0, Brightness = 0.5,
+                FogColor = Color3.fromRGB(10, 10, 15), FogStart = 0, FogEnd = 200,
+                Ambient = Color3.fromRGB(15, 15, 20), OutdoorAmbient = Color3.fromRGB(20, 20, 25),
+                CCTint = Color3.fromRGB(140, 130, 130), CCSaturation = -0.7, CCContrast = 0.4, CCBrightness = -0.2,
+                AtmosDensity = 0.6, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(40, 40, 50),
+                AtmosDecay = Color3.fromRGB(10, 10, 20), AtmosGlare = 0, AtmosHaze = 5,
+            },
+            ["Aurora"] = {
+                SkyboxBk = "rbxassetid://135207744", SkyboxDn = "rbxassetid://135207662",
+                SkyboxFt = "rbxassetid://135207770", SkyboxLf = "rbxassetid://135207615",
+                SkyboxRt = "rbxassetid://135207695", SkyboxUp = "rbxassetid://135207794",
+                ClockTime = 0, Brightness = 2,
+                FogColor = Color3.fromRGB(30, 60, 80), FogStart = 0, FogEnd = 3000,
+                Ambient = Color3.fromRGB(40, 80, 100), OutdoorAmbient = Color3.fromRGB(60, 120, 140),
+                CCTint = Color3.fromRGB(140, 255, 200), CCSaturation = 0.6, CCContrast = 0.3, CCBrightness = 0,
+                AtmosDensity = 0.25, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(100, 255, 200),
+                AtmosDecay = Color3.fromRGB(60, 180, 140), AtmosGlare = 0.5, AtmosHaze = 1.2,
+            },
+            ["Pink Dream"] = {
+                SkyboxBk = "rbxassetid://151165214", SkyboxDn = "rbxassetid://151165197",
+                SkyboxFt = "rbxassetid://151165224", SkyboxLf = "rbxassetid://151165191",
+                SkyboxRt = "rbxassetid://151165206", SkyboxUp = "rbxassetid://151165227",
+                ClockTime = 17, Brightness = 2.5,
+                FogColor = Color3.fromRGB(255, 200, 220), FogStart = 0, FogEnd = 3000,
+                Ambient = Color3.fromRGB(240, 190, 210), OutdoorAmbient = Color3.fromRGB(255, 210, 230),
+                CCTint = Color3.fromRGB(255, 200, 220), CCSaturation = 0.4, CCContrast = 0.1, CCBrightness = 0.1,
+                AtmosDensity = 0.3, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(255, 200, 220),
+                AtmosDecay = Color3.fromRGB(255, 150, 200), AtmosGlare = 0.3, AtmosHaze = 1.5,
+            },
+            ["Galaxy"] = {
+                SkyboxBk = "rbxassetid://15983968922", SkyboxDn = "rbxassetid://15983966825",
+                SkyboxFt = "rbxassetid://15983965025", SkyboxLf = "rbxassetid://15983967420",
+                SkyboxRt = "rbxassetid://15983966246", SkyboxUp = "rbxassetid://15983964246",
+                ClockTime = 0, Brightness = 1.8,
+                FogColor = Color3.fromRGB(15, 10, 30), FogStart = 0, FogEnd = 8000,
+                Ambient = Color3.fromRGB(40, 30, 70), OutdoorAmbient = Color3.fromRGB(60, 40, 100),
+                CCTint = Color3.fromRGB(200, 180, 255), CCSaturation = 0.5, CCContrast = 0.35, CCBrightness = -0.05,
+                AtmosDensity = 0.15, AtmosOffset = 0.25, AtmosColor = Color3.fromRGB(120, 100, 200),
+                AtmosDecay = Color3.fromRGB(60, 40, 120), AtmosGlare = 0.8, AtmosHaze = 0.8,
+            },
+            ["Cherry Blossom"] = {
+                SkyboxBk = "rbxassetid://271042516", SkyboxDn = "rbxassetid://271077243",
+                SkyboxFt = "rbxassetid://271042556", SkyboxLf = "rbxassetid://271042310",
+                SkyboxRt = "rbxassetid://271042467", SkyboxUp = "rbxassetid://271077958",
+                ClockTime = 14, Brightness = 3,
+                FogColor = Color3.fromRGB(255, 230, 240), FogStart = 0, FogEnd = 4000,
+                Ambient = Color3.fromRGB(240, 210, 220), OutdoorAmbient = Color3.fromRGB(255, 230, 240),
+                CCTint = Color3.fromRGB(255, 220, 235), CCSaturation = 0.35, CCContrast = 0.1, CCBrightness = 0.08,
+                AtmosDensity = 0.28, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(255, 230, 240),
+                AtmosDecay = Color3.fromRGB(255, 180, 210), AtmosGlare = 0.15, AtmosHaze = 1.3,
+            },
+            ["Purple Haze"] = {
+                SkyboxBk = "rbxassetid://264908339", SkyboxDn = "rbxassetid://264907909",
+                SkyboxFt = "rbxassetid://264909420", SkyboxLf = "rbxassetid://264909758",
+                SkyboxRt = "rbxassetid://264908886", SkyboxUp = "rbxassetid://264907379",
+                ClockTime = 17.5, Brightness = 2,
+                FogColor = Color3.fromRGB(120, 60, 150), FogStart = 0, FogEnd = 2500,
+                Ambient = Color3.fromRGB(100, 60, 130), OutdoorAmbient = Color3.fromRGB(150, 100, 180),
+                CCTint = Color3.fromRGB(200, 150, 255), CCSaturation = 0.4, CCContrast = 0.25, CCBrightness = 0,
+                AtmosDensity = 0.4, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(180, 120, 220),
+                AtmosDecay = Color3.fromRGB(120, 70, 160), AtmosGlare = 0.25, AtmosHaze = 2,
+            },
+            ["Golden Hour"] = {
+                SkyboxBk = "rbxassetid://600830446", SkyboxDn = "rbxassetid://600831635",
+                SkyboxFt = "rbxassetid://600832720", SkyboxLf = "rbxassetid://600886090",
+                SkyboxRt = "rbxassetid://600833862", SkyboxUp = "rbxassetid://600835177",
+                ClockTime = 17, Brightness = 2.8,
+                FogColor = Color3.fromRGB(255, 200, 120), FogStart = 0, FogEnd = 3000,
+                Ambient = Color3.fromRGB(180, 130, 80), OutdoorAmbient = Color3.fromRGB(255, 200, 140),
+                CCTint = Color3.fromRGB(255, 220, 160), CCSaturation = 0.3, CCContrast = 0.2, CCBrightness = 0.1,
+                AtmosDensity = 0.35, AtmosOffset = 0.25, AtmosColor = Color3.fromRGB(255, 210, 150),
+                AtmosDecay = Color3.fromRGB(200, 140, 80), AtmosGlare = 0.4, AtmosHaze = 1.8,
+            },
+            ["Cyberpunk"] = {
+                SkyboxBk = "rbxassetid://15983968922", SkyboxDn = "rbxassetid://15983966825",
+                SkyboxFt = "rbxassetid://15983965025", SkyboxLf = "rbxassetid://15983967420",
+                SkyboxRt = "rbxassetid://15983966246", SkyboxUp = "rbxassetid://15983964246",
+                ClockTime = 22, Brightness = 2,
+                FogColor = Color3.fromRGB(50, 20, 100), FogStart = 0, FogEnd = 1500,
+                Ambient = Color3.fromRGB(80, 20, 150), OutdoorAmbient = Color3.fromRGB(120, 40, 180),
+                CCTint = Color3.fromRGB(255, 100, 220), CCSaturation = 0.9, CCContrast = 0.4, CCBrightness = 0,
+                AtmosDensity = 0.5, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(200, 50, 200),
+                AtmosDecay = Color3.fromRGB(100, 20, 180), AtmosGlare = 0.6, AtmosHaze = 2.5,
+            },
+            ["Tropical"] = {
+                SkyboxBk = "rbxassetid://16553658937", SkyboxDn = "rbxassetid://16553660713",
+                SkyboxFt = "rbxassetid://16553662144", SkyboxLf = "rbxassetid://16553664042",
+                SkyboxRt = "rbxassetid://16553665766", SkyboxUp = "rbxassetid://16553667750",
+                ClockTime = 13, Brightness = 3.5,
+                FogColor = Color3.fromRGB(180, 230, 255), FogStart = 0, FogEnd = 6000,
+                Ambient = Color3.fromRGB(150, 200, 240), OutdoorAmbient = Color3.fromRGB(200, 240, 255),
+                CCTint = Color3.fromRGB(255, 250, 220), CCSaturation = 0.55, CCContrast = 0.15, CCBrightness = 0.15,
+                AtmosDensity = 0.25, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(200, 240, 255),
+                AtmosDecay = Color3.fromRGB(120, 180, 220), AtmosGlare = 0.2, AtmosHaze = 1.2,
+            },
+            ["Deep Ocean"] = {
+                SkyboxBk = "rbxassetid://218955819", SkyboxDn = "rbxassetid://218953419",
+                SkyboxFt = "rbxassetid://218954524", SkyboxLf = "rbxassetid://218958493",
+                SkyboxRt = "rbxassetid://218957134", SkyboxUp = "rbxassetid://218950090",
+                ClockTime = 14, Brightness = 1.5,
+                FogColor = Color3.fromRGB(20, 80, 120), FogStart = 0, FogEnd = 800,
+                Ambient = Color3.fromRGB(30, 100, 150), OutdoorAmbient = Color3.fromRGB(40, 120, 170),
+                CCTint = Color3.fromRGB(100, 200, 255), CCSaturation = 0.4, CCContrast = 0.25, CCBrightness = -0.1,
+                AtmosDensity = 0.6, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(40, 150, 200),
+                AtmosDecay = Color3.fromRGB(20, 80, 120), AtmosGlare = 0.15, AtmosHaze = 3,
+            },
+            ["Crimson"] = {
+                SkyboxBk = "rbxassetid://15502511288", SkyboxDn = "rbxassetid://15502508460",
+                SkyboxFt = "rbxassetid://15502510289", SkyboxLf = "rbxassetid://15502507918",
+                SkyboxRt = "rbxassetid://15502509398", SkyboxUp = "rbxassetid://15502511911",
+                ClockTime = 19, Brightness = 1.5,
+                FogColor = Color3.fromRGB(120, 20, 30), FogStart = 0, FogEnd = 1200,
+                Ambient = Color3.fromRGB(100, 15, 25), OutdoorAmbient = Color3.fromRGB(150, 30, 40),
+                CCTint = Color3.fromRGB(255, 100, 100), CCSaturation = 0.7, CCContrast = 0.4, CCBrightness = -0.05,
+                AtmosDensity = 0.5, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(180, 40, 50),
+                AtmosDecay = Color3.fromRGB(100, 20, 30), AtmosGlare = 0.2, AtmosHaze = 2.5,
+            },
+            ["Emerald"] = {
+                SkyboxBk = "rbxassetid://155657655", SkyboxDn = "rbxassetid://155674246",
+                SkyboxFt = "rbxassetid://155657609", SkyboxLf = "rbxassetid://155657671",
+                SkyboxRt = "rbxassetid://155657619", SkyboxUp = "rbxassetid://155674931",
+                ClockTime = 14, Brightness = 2.5,
+                FogColor = Color3.fromRGB(180, 240, 200), FogStart = 0, FogEnd = 2500,
+                Ambient = Color3.fromRGB(140, 220, 170), OutdoorAmbient = Color3.fromRGB(180, 240, 200),
+                CCTint = Color3.fromRGB(200, 255, 220), CCSaturation = 0.5, CCContrast = 0.15, CCBrightness = 0.08,
+                AtmosDensity = 0.35, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(180, 255, 200),
+                AtmosDecay = Color3.fromRGB(80, 180, 120), AtmosGlare = 0.15, AtmosHaze = 1.5,
+            },
+            ["Midnight Purple"] = {
+                SkyboxBk = "rbxassetid://135207744", SkyboxDn = "rbxassetid://135207662",
+                SkyboxFt = "rbxassetid://135207770", SkyboxLf = "rbxassetid://135207615",
+                SkyboxRt = "rbxassetid://135207695", SkyboxUp = "rbxassetid://135207794",
+                ClockTime = 0, Brightness = 1.2,
+                FogColor = Color3.fromRGB(25, 15, 50), FogStart = 0, FogEnd = 3000,
+                Ambient = Color3.fromRGB(50, 30, 80), OutdoorAmbient = Color3.fromRGB(70, 45, 110),
+                CCTint = Color3.fromRGB(180, 140, 255), CCSaturation = 0.4, CCContrast = 0.3, CCBrightness = -0.1,
+                AtmosDensity = 0.35, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(100, 60, 180),
+                AtmosDecay = Color3.fromRGB(50, 30, 100), AtmosGlare = 0.3, AtmosHaze = 1.8,
+            },
+        }
+
+        local skyEnabled = false
+        local skyCurrentSky, skyCurrentCC, skyCurrentAtmosCustom = nil, nil, nil
+        local skyActivePresetName = nil
+        local skyPendingPreset = nil
+        local skyOriginal = nil
+        local skyEnforceConn = nil
+
+        local function skySnapshotOriginal()
+            if skyOriginal then return end
+            skyOriginal = {
+                Brightness = LightingSvc.Brightness, ClockTime = LightingSvc.ClockTime,
+                FogColor = LightingSvc.FogColor, FogStart = LightingSvc.FogStart, FogEnd = LightingSvc.FogEnd,
+                Ambient = LightingSvc.Ambient, OutdoorAmbient = LightingSvc.OutdoorAmbient,
+            }
+            local atmos = LightingSvc:FindFirstChildOfClass("Atmosphere")
+            if atmos then
+                skyOriginal.AtmosRef = atmos
+                skyOriginal.AtmosDensity = atmos.Density
+                skyOriginal.AtmosOffset = atmos.Offset
+                skyOriginal.AtmosColor = atmos.Color
+                skyOriginal.AtmosDecay = atmos.Decay
+                skyOriginal.AtmosGlare = atmos.Glare
+                skyOriginal.AtmosHaze = atmos.Haze
+            end
+        end
+
+        local function skyDestroyCustom()
+            if skyCurrentSky then pcall(function() skyCurrentSky:Destroy() end) skyCurrentSky = nil end
+            if skyCurrentCC then pcall(function() skyCurrentCC:Destroy() end) skyCurrentCC = nil end
+            if skyCurrentAtmosCustom then pcall(function() skyCurrentAtmosCustom:Destroy() end) skyCurrentAtmosCustom = nil end
+        end
+
+        local function skyApplyPreset(name)
+            local p = SkyPresets[name]
+            if not p then return end
+            skyActivePresetName = name
+            skySnapshotOriginal()
+            skyDestroyCustom()
+
+            local sky = Instance.new("Sky")
+            sky.Name = "_SkyChanger"
+            sky.SkyboxBk = p.SkyboxBk; sky.SkyboxDn = p.SkyboxDn; sky.SkyboxFt = p.SkyboxFt
+            sky.SkyboxLf = p.SkyboxLf; sky.SkyboxRt = p.SkyboxRt; sky.SkyboxUp = p.SkyboxUp
+            sky.SunAngularSize = 12; sky.MoonAngularSize = 10; sky.StarCount = 3000
+            sky.Parent = LightingSvc
+            skyCurrentSky = sky
+
+            local cc = Instance.new("ColorCorrectionEffect")
+            cc.Name = "_SkyCC"
+            cc.TintColor = p.CCTint; cc.Saturation = p.CCSaturation
+            cc.Contrast = p.CCContrast; cc.Brightness = p.CCBrightness
+            cc.Parent = LightingSvc
+            skyCurrentCC = cc
+
+            local atmos = LightingSvc:FindFirstChildOfClass("Atmosphere")
+            if atmos then
+                atmos.Density = p.AtmosDensity; atmos.Offset = p.AtmosOffset
+                atmos.Color = p.AtmosColor; atmos.Decay = p.AtmosDecay
+                atmos.Glare = p.AtmosGlare; atmos.Haze = p.AtmosHaze
+            else
+                local a = Instance.new("Atmosphere")
+                a.Name = "_SkyAtmos"
+                a.Density = p.AtmosDensity; a.Offset = p.AtmosOffset
+                a.Color = p.AtmosColor; a.Decay = p.AtmosDecay
+                a.Glare = p.AtmosGlare; a.Haze = p.AtmosHaze
+                a.Parent = LightingSvc
+                skyCurrentAtmosCustom = a
+            end
+        end
+
+        local function skyStartEnforce()
+            if skyEnforceConn then skyEnforceConn:Disconnect() end
+            skyEnforceConn = RService.Heartbeat:Connect(function()
+                if not skyEnabled or not skyActivePresetName then return end
+                local p = SkyPresets[skyActivePresetName]
+                if not p then return end
+                pcall(function()
+                    for _, inst in ipairs(LightingSvc:GetChildren()) do
+                        if inst:IsA("Sky") and inst ~= skyCurrentSky and inst.Enabled then
+                            inst.Enabled = false
+                        end
+                    end
+                    if skyCurrentSky and skyCurrentSky.Parent ~= LightingSvc then skyCurrentSky.Parent = LightingSvc end
+                    if skyCurrentCC and skyCurrentCC.Parent ~= LightingSvc then skyCurrentCC.Parent = LightingSvc end
+                    LightingSvc.Brightness = p.Brightness
+                    LightingSvc.ClockTime = p.ClockTime
+                    LightingSvc.FogColor = p.FogColor
+                    LightingSvc.FogStart = p.FogStart
+                    LightingSvc.FogEnd = p.FogEnd
+                    LightingSvc.Ambient = p.Ambient
+                    LightingSvc.OutdoorAmbient = p.OutdoorAmbient
+                end)
+            end)
+        end
+
+        local function skyStopEnforce()
+            if skyEnforceConn then skyEnforceConn:Disconnect() skyEnforceConn = nil end
+        end
+
+        local function skyRestoreOriginal()
+            skyStopEnforce()
+            skyDestroyCustom()
+            if skyOriginal then
+                pcall(function()
+                    LightingSvc.Brightness = skyOriginal.Brightness
+                    LightingSvc.ClockTime = skyOriginal.ClockTime
+                    LightingSvc.FogColor = skyOriginal.FogColor
+                    LightingSvc.FogStart = skyOriginal.FogStart
+                    LightingSvc.FogEnd = skyOriginal.FogEnd
+                    LightingSvc.Ambient = skyOriginal.Ambient
+                    LightingSvc.OutdoorAmbient = skyOriginal.OutdoorAmbient
+                end)
+                if skyOriginal.AtmosRef and skyOriginal.AtmosRef.Parent then
+                    pcall(function()
+                        skyOriginal.AtmosRef.Density = skyOriginal.AtmosDensity
+                        skyOriginal.AtmosRef.Offset = skyOriginal.AtmosOffset
+                        skyOriginal.AtmosRef.Color = skyOriginal.AtmosColor
+                        skyOriginal.AtmosRef.Decay = skyOriginal.AtmosDecay
+                        skyOriginal.AtmosRef.Glare = skyOriginal.AtmosGlare
+                        skyOriginal.AtmosRef.Haze = skyOriginal.AtmosHaze
+                    end)
+                end
+            end
+            for _, inst in ipairs(LightingSvc:GetChildren()) do
+                if inst:IsA("Sky") then inst.Enabled = true end
+            end
+            skyActivePresetName = nil
+        end
+
+        -- Sky UI
+        ShaderGroup:AddDivider("Sky Shader")
+
+        ShaderGroup:AddToggle("SkyShaderToggle", {
+            Text = "Sky Shader",
+            Default = false,
+            Callback = function(v)
+                skyEnabled = v
+                if v then
+                    if skyPendingPreset and SkyPresets[skyPendingPreset] then
+                        skyApplyPreset(skyPendingPreset)
+                    elseif skyActivePresetName and SkyPresets[skyActivePresetName] then
+                        skyApplyPreset(skyActivePresetName)
+                    else
+                        skyApplyPreset("Rainy")
+                        skyPendingPreset = "Rainy"
+                    end
+                    skyStartEnforce()
+                    ClyrixNotify("Sky", "Sky Shader ON", 2)
+                else
+                    skyRestoreOriginal()
+                    ClyrixNotify("Sky", "Sky Shader OFF", 2)
+                end
+            end,
+        })
+
+        local skyPresetNames = {}
+        for presetName in pairs(SkyPresets) do table.insert(skyPresetNames, presetName) end
+        table.sort(skyPresetNames)
+
+        ShaderGroup:AddDropdown("SkyPresetSelect", {
+            Text = "Sky Preset",
+            Values = skyPresetNames,
+            Default = "Rainy",
+            Callback = function(Value)
+                pcall(function()
+                    local name = Value
+                    if type(name) ~= "string" then return end
+                    if not SkyPresets[name] then return end
+                    if skyEnabled then
+                        skyApplyPreset(name)
+                    else
+                        skyPendingPreset = name
+                    end
+                end)
+            end,
+        })
+
+        ShaderGroup:AddButton({
+            Text = "Restore Original Sky",
+            Func = function()
+                skyRestoreOriginal()
+                skyPendingPreset = nil
+                ClyrixNotify("Sky", "Original sky restored", 2)
+            end,
+        })
+    end
+    SkyInit()
+
+    -- ============================================================
+    -- Snow Shader
+    -- ============================================================
+    local function SnowInit()
+        local SnowWorkspace = game:GetService("Workspace")
+        local SnowRService = game:GetService("RunService")
+        local SnowPlayer = game:GetService("Players").LocalPlayer
+
+        local snowSettings = {
+            rate = 500, speed = 35, size = 0.6, spread = 20,
+            opacity = 0, color = Color3.fromRGB(255, 255, 255),
+            height = 30, areaSize = 220,
+        }
+
+        local SNOW_TEXTURE = "rbxassetid://118641183"
+
+        local snowFolder = nil
+        local snowPart = nil
+        local snowEmitter = nil
+        local snowFollowConnection = nil
+        local snowEnabled = false
+
+        local function snowDestroy()
+            if snowFollowConnection then
+                snowFollowConnection:Disconnect()
+                snowFollowConnection = nil
+            end
+            if snowFolder then
+                pcall(function() snowFolder:Destroy() end)
+                snowFolder = nil
+            end
+            snowPart = nil
+            snowEmitter = nil
+        end
+
+        local function snowCreate()
+            snowDestroy()
+            snowFolder = Instance.new("Folder")
+            snowFolder.Name = "_SnowFX"
+            snowFolder.Parent = SnowWorkspace
+
+            snowPart = Instance.new("Part")
+            snowPart.Name = "SnowEmitter"
+            snowPart.Size = Vector3.new(snowSettings.areaSize, 1, snowSettings.areaSize)
+            snowPart.Transparency = 1
+            snowPart.Anchored = true
+            snowPart.CanCollide = false
+            snowPart.CanQuery = false
+            snowPart.CanTouch = false
+            snowPart.CastShadow = false
+            snowPart.Parent = snowFolder
+
+            snowEmitter = Instance.new("ParticleEmitter")
+            snowEmitter.Name = "SnowFlake"
+            snowEmitter.Texture = SNOW_TEXTURE
+            snowEmitter.Rate = snowSettings.rate
+            snowEmitter.Lifetime = NumberRange.new(4, 8)
+            snowEmitter.Speed = NumberRange.new(snowSettings.speed * 0.5, snowSettings.speed)
+            snowEmitter.Drag = 0.3
+            snowEmitter.Acceleration = Vector3.new(0, -snowSettings.speed * 0.4, 0)
+            snowEmitter.Rotation = NumberRange.new(0, 360)
+            snowEmitter.RotSpeed = NumberRange.new(-25, 25)
+            snowEmitter.Size = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, snowSettings.size * 0.5),
+                NumberSequenceKeypoint.new(1, snowSettings.size),
+            })
+            snowEmitter.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, snowSettings.opacity),
+                NumberSequenceKeypoint.new(0.8, snowSettings.opacity),
+                NumberSequenceKeypoint.new(1, 1),
+            })
+            snowEmitter.Color = ColorSequence.new(snowSettings.color)
+            snowEmitter.LightEmission = 0.1
+            snowEmitter.LightInfluence = 0
+            snowEmitter.Shape = Enum.ParticleEmitterShape.Box
+            snowEmitter.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume
+            snowEmitter.ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward
+            snowEmitter.EmissionDirection = Enum.NormalId.Bottom
+            snowEmitter.SpreadAngle = Vector2.new(snowSettings.spread, snowSettings.spread)
+            snowEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
+            snowEmitter.Parent = snowPart
+
+            snowFollowConnection = SnowRService.RenderStepped:Connect(function()
+                local char = SnowPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                snowPart.CFrame = CFrame.new(hrp.Position + Vector3.new(0, snowSettings.height, 0))
+            end)
+        end
+
+        local function snowUpdateSize()
+            if not snowEmitter then return end
+            snowEmitter.Size = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, snowSettings.size * 0.5),
+                NumberSequenceKeypoint.new(1, snowSettings.size),
+            })
+        end
+
+        local function snowSetEnabled(state)
+            snowEnabled = state
+            if state then
+                snowCreate()
+                ClyrixNotify("Snow", "Snowfall enabled", 2)
+            else
+                snowDestroy()
+                ClyrixNotify("Snow", "Snowfall disabled", 2)
+            end
+        end
+
+        ShaderGroup:AddDivider("Snow Shader")
+
+        ShaderGroup:AddToggle("SnowShaderToggle", {
+            Text = "Snow Shader",
+            Default = false,
+            Callback = function(v) snowSetEnabled(v) end,
+        })
+
+        ShaderGroup:AddSlider("SnowSizeSlider", {
+            Text = "Snow Size",
+            Default = 0.6,
+            Min = 0.1,
+            Max = 3,
+            Rounding = 1,
+            Callback = function(v)
+                snowSettings.size = v
+                if snowEnabled then snowUpdateSize() end
+            end,
+        })
+
+        SnowPlayer.CharacterAdded:Connect(function()
+            if snowEnabled then
+                task.wait(0.5)
+                if snowEnabled then snowCreate() end
+            end
+        end)
+    end
+    SnowInit()
+end
+InitShaderTab()
+-- =====================================================
 -- UI Settings
 -- =====================================================
 ThemeManager:SetLibrary(Library)
