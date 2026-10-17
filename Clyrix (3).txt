@@ -7140,6 +7140,7 @@ function InitPosesTab()
     end)
 end
 InitPosesTab()
+
 -- =====================================================
 -- Visuals: Shader (Sky + Snow)
 -- =====================================================
@@ -7703,6 +7704,574 @@ function InitShaderTab()
     SnowInit()
 end
 InitShaderTab()
+-- =====================================================
+-- Grab タブ: grab.txt 統合（完全版）
+-- =====================================================
+function InitGrabTab()
+    local GrabPlayers = game:GetService("Players")
+    local GrabReplicatedStorage = game:GetService("ReplicatedStorage")
+    local GrabRunService = game:GetService("RunService")
+    local GrabWorkspace = game:GetService("Workspace")
+    local GrabUserInputService = game:GetService("UserInputService")
+    local GrabDebris = game:GetService("Debris")
+    local GrabLocalPlayer = GrabPlayers.LocalPlayer
+    local GrabCamera = GrabWorkspace.CurrentCamera
+
+    -- ===== 状態テーブル =====
+    local grabModes = {
+        ["Kill Grab"] = false,
+        ["Sky Grab"] = false,
+        ["Spin Grab"] = false,
+        ["Teleport Up"] = false,
+        ["Teleport Down"] = false,
+        ["Chaos Grab"] = false,
+        ["Supersonic Grab"] = false,
+        ["Freeze Grab"] = false,
+    }
+
+    local grabCfg = {
+        SuperStrength = false,
+        Strength = 5000,
+        lineColor1 = Color3.fromRGB(255, 0, 0),
+        lineColor2 = Color3.fromRGB(0, 0, 255),
+        lineColor3 = Color3.fromRGB(0, 255, 0),
+        lineColor4 = Color3.fromRGB(255, 255, 0),
+        lineColor5 = Color3.fromRGB(255, 0, 255),
+        lineColor6 = Color3.fromRGB(0, 255, 255),
+        IncreaseLineExtend = 3,
+    }
+
+    -- =====================================================
+    -- Grab ハンドラ関数群（ソースそのまま）
+    -- =====================================================
+    local function handleKillGrab(arg)
+        pcall(function()
+            local grabPart_ = arg:FindFirstChild("GrabPart")
+            local weldConstraint = grabPart_ and grabPart_:FindFirstChild("WeldConstraint")
+            if weldConstraint and weldConstraint.Part1 then
+                weldConstraint.Part1.Parent:BreakJoints()
+            end
+        end)
+    end
+
+    local function handleSkyGrab(arg)
+        pcall(function()
+            local grabPart_ = arg:FindFirstChild("GrabPart")
+            if grabPart_ and grabPart_:FindFirstChild("WeldConstraint") then
+                local bodyVelocity = Instance.new("BodyVelocity")
+                bodyVelocity.Velocity = Vector3.new(0, 100, 0)
+                bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+                bodyVelocity.Parent = grabPart_
+            end
+        end)
+    end
+
+    local function handleSpinGrab(arg)
+        pcall(function()
+            local grabPart_ = arg:FindFirstChild("GrabPart")
+            grabPart_ = grabPart_ and grabPart_:FindFirstChild("WeldConstraint")
+            if grabPart_ and grabPart_.Part1 then
+                local bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+                bodyAngularVelocity.AngularVelocity = Vector3.new(0, 1000, 0)
+                bodyAngularVelocity.MaxTorque = Vector3.new(0, math.huge, 0)
+                bodyAngularVelocity.Parent = grabPart_.Part1
+                for _, child in ipairs(arg:GetChildren()) do
+                    child:Destroy()
+                end
+            end
+        end)
+    end
+
+    local function handleChaosGrab(arg, isActiveFn)
+        pcall(function()
+            local grabPart_ = arg:FindFirstChild("GrabPart")
+            if not grabPart_ then return end
+            local bodyPosition = Instance.new("BodyPosition")
+            bodyPosition.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            bodyPosition.Parent = grabPart_
+            local bodyGyro = Instance.new("BodyGyro")
+            bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            bodyGyro.Parent = grabPart_
+            task.spawn(function()
+                while isActiveFn() do
+                    pcall(function()
+                        local random = math.random
+                        bodyPosition.Position = grabPart_.Position + Vector3.new(math.random(-50, 50), math.random(-50, 50), random(-50, 50))
+                        local rad = math.rad
+                        local random2 = math.random
+                        bodyGyro.CFrame = CFrame.Angles(math.rad(math.random(-180, 180)), math.rad(math.random(-180, 180)), rad(random2(-180, 180)))
+                    end)
+                    task.wait(0.1)
+                end
+                bodyPosition:Destroy()
+                bodyGyro:Destroy()
+            end)
+        end)
+    end
+
+    local function handleSupersonicGrab(arg)
+        pcall(function()
+            local grabPart_ = arg:FindFirstChild("GrabPart")
+            if grabPart_ then
+                local bodyVelocity = Instance.new("BodyVelocity")
+                bodyVelocity.Velocity = Vector3.new(0, 350, 0)
+                bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+                bodyVelocity.Parent = grabPart_
+            end
+        end)
+    end
+
+    local function handleFreezeGrab(arg)
+        pcall(function()
+            local grabPart_ = arg:FindFirstChild("GrabPart")
+            if grabPart_ then
+                local bodyPosition = Instance.new("BodyPosition")
+                bodyPosition.Position = grabPart_.Position
+                bodyPosition.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyPosition.Parent = grabPart_
+            end
+        end)
+    end
+
+    local function handleTeleport(arg, dir)
+        pcall(function()
+            local grabPart_ = arg:FindFirstChild("GrabPart")
+            if grabPart_ then
+                grabPart_.Position = grabPart_.Position + Vector3.new(0, dir == "up" and 30 or -30, 0)
+            end
+        end)
+    end
+
+    -- =====================================================
+    -- GrabParts ハンドラ（UI作成より先に接続）
+    -- =====================================================
+    GrabWorkspace.ChildAdded:Connect(function(child)
+        if child.Name ~= "GrabParts" then return end
+
+        if grabModes["Kill Grab"] then handleKillGrab(child) end
+        if grabModes["Sky Grab"] then handleSkyGrab(child) end
+        if grabModes["Spin Grab"] then handleSpinGrab(child) end
+        if grabModes["Teleport Up"] then handleTeleport(child, "up") end
+        if grabModes["Teleport Down"] then handleTeleport(child, "down") end
+        if grabModes["Chaos Grab"] then
+            handleChaosGrab(child, function() return grabModes["Chaos Grab"] end)
+        end
+        if grabModes["Supersonic Grab"] then handleSupersonicGrab(child) end
+        if grabModes["Freeze Grab"] then handleFreezeGrab(child) end
+
+        if grabCfg.SuperStrength then
+            task.spawn(function()
+                local grabPart_ = child:WaitForChild("GrabPart", 5)
+                if not grabPart_ or not grabPart_:FindFirstChild("WeldConstraint") then return end
+                local part1 = grabPart_.WeldConstraint.Part1
+                if not part1 then return end
+                local bodyVelocity = Instance.new("BodyVelocity", part1)
+                bodyVelocity.MaxForce = Vector3.zero
+                bodyVelocity.Velocity = Vector3.new()
+                bodyVelocity.Name = "SuperStrength"
+                local conn
+                conn = child:GetPropertyChangedSignal("Parent"):Connect(function()
+                    if child.Parent then return end
+                    local lastInput = GrabUserInputService:GetLastInputType()
+                    local isRelease = (lastInput ~= Enum.UserInputType.MouseButton2 and not _G.MobileSuperStrengthTriggered) or not grabCfg.SuperStrength
+                    if isRelease then
+                        local isClick = (lastInput == Enum.UserInputType.MouseButton1) or (lastInput == Enum.UserInputType.Touch)
+                        if isClick then
+                            bodyVelocity:Destroy()
+                        end
+                    else
+                        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                        bodyVelocity.Velocity = GrabWorkspace.CurrentCamera.CFrame.lookVector * (grabCfg.Strength or 5000)
+                        GrabDebris:AddItem(bodyVelocity, 1)
+                    end
+                    conn:Disconnect()
+                end)
+            end)
+        end
+    end)
+
+    -- =====================================================
+    -- UI: 左側 Grab Mode
+    -- =====================================================
+    local GrabModeGroup = Tabs.Grab:AddLeftGroupbox("Grab Mode", "hand")
+
+    for modeName in pairs(grabModes) do
+        GrabModeGroup:AddToggle("GrabMode_" .. modeName:gsub("%s", "_"), {
+            Text = modeName,
+            Default = false,
+            Callback = function(v)
+                grabModes[modeName] = v
+            end,
+        })
+    end
+
+    -- =====================================================
+    -- UI: 左側 Power and Gamepass
+    -- =====================================================
+    local PowerGroup = Tabs.Grab:AddLeftGroupbox("Power and Gamepass", "zap")
+
+    -- Super Strength モバイルボタン
+    local superStrengthButton = Instance.new("TextButton")
+    superStrengthButton.BackgroundTransparency = 1
+    superStrengthButton.Text = ""
+    superStrengthButton.Active = false
+    superStrengthButton.Visible = false
+
+    task.spawn(function()
+        local playerGui = GrabLocalPlayer:WaitForChild("PlayerGui", 5)
+        playerGui = playerGui and playerGui:WaitForChild("ContextActionGui", 5)
+        playerGui = playerGui and playerGui:WaitForChild("ContextButtonFrame", 5)
+        if not playerGui then return end
+        local conn
+        local function checkAndMove(obj)
+            if obj:IsA("ImageLabel") and obj.Image == "rbxassetid://9603669631" then
+                if obj.Parent and obj.Parent:IsA("GuiObject") then
+                    superStrengthButton.Parent = obj.Parent
+                    superStrengthButton.Position = UDim2.new(0, 0, 0, 0)
+                    superStrengthButton.Size = UDim2.new(1, 0, 1, 0)
+                    return true
+                end
+            end
+            return false
+        end
+        for _, d in ipairs(playerGui:GetDescendants()) do
+            if checkAndMove(d) then return end
+        end
+        conn = playerGui.DescendantAdded:Connect(function(d)
+            if checkAndMove(d) and conn then conn:Disconnect() end
+        end)
+    end)
+
+    superStrengthButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if superStrengthButton.Visible then
+                _G.MobileSuperStrengthTriggered = true
+                task.delay(0.5, function()
+                    _G.MobileSuperStrengthTriggered = false
+                end)
+            end
+        end
+    end)
+
+    PowerGroup:AddToggle("SuperStrengthGrab", {
+        Text = "Super Strength",
+        Default = false,
+        Callback = function(v)
+            grabCfg.SuperStrength = v
+            superStrengthButton.Visible = v
+        end,
+    })
+
+    PowerGroup:AddSlider("StrengthValue", {
+        Text = "Strength",
+        Default = 5000,
+        Min = 10,
+        Max = 10000,
+        Rounding = 0,
+        Callback = function(v)
+            grabCfg.Strength = v
+        end,
+    })
+
+    PowerGroup:AddDivider("Gamepass")
+
+    PowerGroup:AddToggle("FreeGamepassReach", {
+        Text = "Further Reach",
+        Default = false,
+        Callback = function(v)
+            local fartherReach = GrabLocalPlayer:FindFirstChild("FartherReach")
+            if v then
+                if not fartherReach then
+                    fartherReach = Instance.new("BoolValue")
+                    fartherReach.Name = "FartherReach"
+                    fartherReach.Parent = GrabLocalPlayer
+                end
+                fartherReach.Value = true
+                local notifier = GrabReplicatedStorage:FindFirstChild("GamepassEvents")
+                notifier = notifier and notifier:FindFirstChild("FurtherReachBoughtNotifier")
+                if notifier then
+                    for _, c in ipairs(getconnections(notifier.OnClientEvent)) do
+                        pcall(c.Function)
+                    end
+                end
+            elseif fartherReach then
+                fartherReach:Destroy()
+            end
+        end,
+    })
+
+    -- =====================================================
+    -- Line Extend モバイルボタン制御
+    -- =====================================================
+    local extendButtonState = nil
+    do
+        local lineExtendDistance = 3
+        local holdActive = false
+        local grabbingScript = nil
+        local grabbingEnv = nil
+        local grabPartsRef = nil
+        local camDist = 0
+
+        local extendScreenGui = Instance.new("ScreenGui")
+        extendScreenGui.ResetOnSpawn = false
+        extendScreenGui.Name = "FurtherExtendGUI"
+        if GrabUserInputService.TouchEnabled then
+            extendScreenGui.Parent = GrabLocalPlayer.PlayerGui
+        end
+
+        local extendUpBtn = Instance.new("ImageButton")
+        extendUpBtn.Size = UDim2.new(0, 45, 0, 45)
+        extendUpBtn.Position = UDim2.new(1, -70, 1, -259)
+        extendUpBtn.Image = "rbxassetid://97166444"
+        extendUpBtn.BackgroundTransparency = 1
+        extendUpBtn.ImageTransparency = 1
+        extendUpBtn.Visible = false
+        extendUpBtn.ImageColor3 = Color3.fromRGB(142, 142, 142)
+        extendUpBtn.Parent = extendScreenGui
+
+        local extendUpIcon = Instance.new("ImageLabel")
+        extendUpIcon.Size = UDim2.new(1, 0, 1, 0)
+        extendUpIcon.Image = "rbxassetid://9603831913"
+        extendUpIcon.BackgroundTransparency = 1
+        extendUpIcon.Visible = false
+        extendUpIcon.Parent = extendUpBtn
+
+        local extendDownBtn = Instance.new("ImageButton")
+        extendDownBtn.Size = UDim2.new(0, 45, 0, 45)
+        extendDownBtn.Position = UDim2.new(1, -70, 1, -211)
+        extendDownBtn.Image = "rbxassetid://97166444"
+        extendDownBtn.BackgroundTransparency = 1
+        extendDownBtn.ImageTransparency = 1
+        extendDownBtn.Visible = false
+        extendDownBtn.ImageColor3 = Color3.fromRGB(142, 142, 142)
+        extendDownBtn.Parent = extendScreenGui
+
+        local extendDownIcon = Instance.new("ImageLabel")
+        extendDownIcon.Size = UDim2.new(1, 0, 1, 0)
+        extendDownIcon.Image = "rbxassetid://9603826756"
+        extendDownIcon.BackgroundTransparency = 1
+        extendDownIcon.Visible = false
+        extendDownIcon.Parent = extendDownBtn
+
+        local function setupAutoPosition(btn, iconImage)
+            task.spawn(function()
+                local pg = GrabLocalPlayer:WaitForChild("PlayerGui", 5)
+                pg = pg and pg:WaitForChild("ContextActionGui", 5)
+                pg = pg and pg:WaitForChild("ContextButtonFrame", 5)
+                if not pg then return end
+                local conn
+                local function check(obj)
+                    if obj:IsA("ImageLabel") and obj.Image == iconImage then
+                        if obj.Parent and obj.Parent:IsA("GuiObject") then
+                            btn.Parent = obj.Parent
+                            btn.Position = UDim2.new(0, 0, 0, 0)
+                            btn.Size = UDim2.new(1, 0, 1, 0)
+                            return true
+                        end
+                    end
+                    return false
+                end
+                for _, d in ipairs(pg:GetDescendants()) do
+                    if check(d) then return end
+                end
+                conn = pg.DescendantAdded:Connect(function(d)
+                    if check(d) and conn then conn:Disconnect() end
+                end)
+            end)
+        end
+
+        setupAutoPosition(extendUpBtn, "rbxassetid://9603831913")
+        setupAutoPosition(extendDownBtn, "rbxassetid://9603826756")
+
+        extendButtonState = function(state)
+            local on = state and _G.FurtherExtend
+            extendUpBtn.Visible = on
+            extendUpBtn.Active = on
+            extendDownBtn.Visible = on
+            extendDownBtn.Active = on
+        end
+
+        local function btnIncrease()
+            if grabbingEnv and grabbingEnv.distance and _G.FurtherExtend then
+                grabbingEnv.distance = (grabbingEnv.distance or 0) + grabCfg.IncreaseLineExtend
+                if grabbingEnv.distance < lineExtendDistance then
+                    grabbingEnv.distance = lineExtendDistance
+                end
+            end
+        end
+
+        local function btnDecrease()
+            if grabbingEnv and grabbingEnv.distance and _G.FurtherExtend then
+                grabbingEnv.distance = (grabbingEnv.distance or 0) - grabCfg.IncreaseLineExtend
+                if grabbingEnv.distance < lineExtendDistance then
+                    grabbingEnv.distance = lineExtendDistance
+                end
+            end
+        end
+
+        GrabWorkspace.ChildAdded:Connect(function(child)
+            if child.Name == "GrabParts" and child:IsA("Model") and _G.FurtherExtend then
+                if GrabUserInputService.MouseEnabled then
+                    grabPartsRef = child
+                    pcall(function()
+                        grabPartsRef:WaitForChild("GrabPart")
+                        grabPartsRef:WaitForChild("DragPart")
+                        local bp = Instance.new("BodyPosition", grabPartsRef.GrabPart)
+                        bp.MaxForce = Vector3.new(275000, 275000, 275000)
+                        bp.P = 20000
+                        bp.D = 950
+                        bp.Position = grabPartsRef.GrabPart.WeldConstraint.Part1.Position
+                        camDist = (grabPartsRef.GrabPart.Position - GrabCamera.CFrame.Position).Magnitude
+                        grabPartsRef.DragPart.AlignPosition.Enabled = false
+                        task.spawn(function()
+                            while grabPartsRef.Parent do
+                                bp.Position = GrabCamera.CFrame.Position + GrabCamera.CFrame.LookVector * camDist
+                                task.wait()
+                            end
+                            camDist = 0
+                            bp:Destroy()
+                        end)
+                    end)
+                end
+                extendButtonState(true)
+            end
+        end)
+
+        GrabWorkspace.ChildRemoved:Connect(function(child)
+            if child.Name == "GrabParts" and child:IsA("Model") then
+                extendButtonState(false)
+            end
+        end)
+
+        GrabUserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseWheel and _G.FurtherExtend then
+                if camDist < 11 then camDist = 11 end
+                if input.Position.Z <= 0 then
+                    if input.Position.Z < 0 then camDist -= grabCfg.IncreaseLineExtend end
+                else
+                    camDist += grabCfg.IncreaseLineExtend
+                end
+            end
+        end)
+
+        local function continuousIncrease()
+            while holdActive do
+                btnIncrease()
+                task.wait(0.1)
+            end
+        end
+        local function continuousDecrease()
+            while holdActive do
+                btnDecrease()
+                task.wait(0.1)
+            end
+        end
+
+        extendUpBtn.InputBegan:Connect(function(input, processed)
+            if not processed and GrabUserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch then
+                holdActive = true
+                task.spawn(continuousIncrease)
+            end
+        end)
+        extendUpBtn.InputEnded:Connect(function(input)
+            if GrabUserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch then
+                holdActive = false
+            end
+        end)
+        extendDownBtn.InputBegan:Connect(function(input, processed)
+            if not processed and GrabUserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch then
+                holdActive = true
+                task.spawn(continuousDecrease)
+            end
+        end)
+        extendDownBtn.InputEnded:Connect(function(input)
+            if GrabUserInputService.TouchEnabled and input.UserInputType == Enum.UserInputType.Touch then
+                holdActive = false
+            end
+        end)
+
+        local function reconnectSenv()
+            local character = GrabLocalPlayer.Character or GrabLocalPlayer.CharacterAdded:Wait()
+            character:WaitForChild("HumanoidRootPart")
+            grabbingScript = character:WaitForChild("GrabbingScript", 5)
+            if grabbingScript and getsenv then
+                grabbingEnv = getsenv(grabbingScript)
+            end
+        end
+        GrabLocalPlayer.CharacterAdded:Connect(reconnectSenv)
+        task.spawn(reconnectSenv)
+    end
+
+    PowerGroup:AddDivider("Line Extend")
+
+    PowerGroup:AddToggle("InfiniteLineExtend", {
+        Text = "Infinity Extend Line",
+        Default = false,
+        Callback = function(v)
+            _G.FurtherExtend = v
+            if extendButtonState then extendButtonState(v) end
+        end,
+    })
+
+    PowerGroup:AddSlider("ExtendSpeed", {
+        Text = "Speed",
+        Default = 3,
+        Min = 3,
+        Max = 25,
+        Rounding = 0,
+        Callback = function(v)
+            grabCfg.IncreaseLineExtend = v
+        end,
+    })
+
+    -- =====================================================
+    -- UI: 右側 Line Color（Hex入力）
+    -- =====================================================
+    local LineColorGroup = Tabs.Grab:AddRightGroupbox("Line Color", "droplet")
+
+    LineColorGroup:AddDivider("Line Colors")
+
+    local function hexToColor(hex)
+        hex = tostring(hex or ""):gsub("#", ""):gsub("%s", "")
+        if #hex ~= 6 then return nil end
+        local r = tonumber(hex:sub(1, 2), 16) or 0
+        local g = tonumber(hex:sub(3, 4), 16) or 0
+        local b = tonumber(hex:sub(5, 6), 16) or 0
+        return Color3.fromRGB(r, g, b)
+    end
+
+    local defaultHex = {"FF0000", "0000FF", "00FF00", "FFFF00", "FF00FF", "00FFFF"}
+
+    for i = 1, 6 do
+        local idx = i
+        LineColorGroup:AddInput("LineColorHex" .. idx, {
+            Text = "Line Color " .. idx .. " (Hex)",
+            Default = defaultHex[idx],
+            Placeholder = "#" .. defaultHex[idx],
+            Callback = function(v)
+                local c = hexToColor(v)
+                if c then
+                    grabCfg["lineColor" .. idx] = c
+                end
+            end,
+        })
+    end
+
+    LineColorGroup:AddButton({
+        Text = "Apply Line Color",
+        Func = function()
+            local points = {}
+            for i = 1, 6 do
+                table.insert(points, ColorSequenceKeypoint.new((i - 1) / 5, grabCfg["lineColor" .. i]))
+            end
+            pcall(function()
+                GrabReplicatedStorage.DataEvents.UpdateLineColorsEvent:FireServer(ColorSequence.new(points))
+            end)
+        end,
+    })
+end
+InitGrabTab()
+
 -- =====================================================
 -- UI Settings
 -- =====================================================
