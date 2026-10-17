@@ -55,6 +55,7 @@ local Window = Library:CreateWindow({
 
 local Tabs = {
     Main = Window:AddTab("Main", "code"),
+Grab = Window:AddTab("Grab", "hand"),
     Defence = Window:AddTab("Defence", "shield"),
     Target = Window:AddTab("Target", "target"),
     Player = Window:AddTab("Player", "user"),
