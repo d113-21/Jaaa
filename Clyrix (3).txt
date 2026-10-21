@@ -10,6 +10,11 @@ local SaveManager = loadstring(game:HttpGet(repo .. "SaveManager.lua"))()
 local Options = Library.Options
 local Toggles = Library.Toggles
 local Library_Global = Library
+
+
+-- ★ デフォルト色変更（アクセント=白、アウトライン=灰）
+Library.Scheme.AccentColor = Color3.fromRGB(255, 255, 255)
+Library.Scheme.OutlineColor = Color3.fromRGB(128, 128, 128)
 -- =====================================================
 -- 通知サイズ統一ヘルパー
 -- =====================================================
