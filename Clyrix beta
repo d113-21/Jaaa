@@ -15,7 +15,7 @@ local Lighting = game:GetService('Lighting')
 local TweenService = game:GetService('TweenService')
 local InsertService = game:GetService('InsertService')
 local LocalPlayer = Players.LocalPlayer
-
+local UserInputService = game:GetService('UserInputService')
 local OLD_NOTIFY = Library.Notify
 
 function Library:Notify(data)
@@ -6143,4 +6143,1703 @@ end) -- pcall end
 
 if not serverOK then
     warn("[Clyrix] Server init error: " .. tostring(serverErr))
+end
+
+-- =====================================================
+-- Visuals タブ: ESP / Black Hole / Time / Shader
+-- =====================================================
+local visualsOK, visualsErr = pcall(function()
+
+local localPlayer = LocalPlayer
+local replicatedStorage = ReplicatedStorage
+
+local function ClyrixNotify(title, desc, time)
+    Library:Notify({ Title = title, Description = desc, Time = time or 5 })
+end
+
+-- =====================================================
+-- Visuals: Image ESP
+-- =====================================================
+local EspGroup = Tabs.VisualsTab:AddLeftGroupbox("ESP", "eye")
+
+local ESP_CONFIG = { ImageId = "rbxassetid://85976003217279", MaxDistance = 500, BaseSize = 10 }
+local ESP_ROTATE_SPEED = 160
+local ESP_PULSE_SPEED = 1.8
+local ESP_PULSE_AMOUNT = 0.35
+local ESP_COLOR_LARGE = Color3.fromRGB(130, 60, 255)
+local ESP_COLOR_SMALL = Color3.fromRGB(220, 40, 40)
+local ESP_STATE = { Enabled = false }
+local espData = {}
+
+local function shouldShow(player)
+    if not ESP_STATE.Enabled then return false end
+    if player == LocalPlayer then return false end
+    return true
+end
+
+local function removeESP(player)
+    local data = espData[player]
+    if not data then return end
+    if data.Billboard then data.Billboard:Destroy() end
+    espData[player] = nil
+end
+
+local function createESP(player)
+    removeESP(player)
+    if not shouldShow(player) then return end
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ClyrixESP_Image"
+    billboard.Adornee = root
+    billboard.Size = UDim2.fromScale(ESP_CONFIG.BaseSize, ESP_CONFIG.BaseSize)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = char
+    local container = Instance.new("Frame")
+    container.Name = "Container"
+    container.BackgroundTransparency = 1
+    container.Size = UDim2.fromScale(1, 1)
+    container.Parent = billboard
+    local img = Instance.new("ImageLabel")
+    img.BackgroundTransparency = 1
+    img.Size = UDim2.fromScale(1, 1)
+    img.Image = ESP_CONFIG.ImageId
+    img.ScaleType = Enum.ScaleType.Fit
+    img.ImageColor3 = ESP_COLOR_LARGE
+    img.Parent = container
+    espData[player] = { Billboard = billboard, Container = container, Image = img, BaseSize = ESP_CONFIG.BaseSize }
+end
+
+local function espRefreshAll()
+    for _, player in ipairs(Players:GetPlayers()) do createESP(player) end
+end
+
+local function espWatchPlayer(player)
+    if player == LocalPlayer then return end
+    player.CharacterAdded:Connect(function()
+        task.wait(0.1)
+        createESP(player)
+    end)
+    player.CharacterRemoving:Connect(function() removeESP(player) end)
+    if player.Character then createESP(player) end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do espWatchPlayer(player) end
+Players.PlayerAdded:Connect(espWatchPlayer)
+Players.PlayerRemoving:Connect(removeESP)
+
+EspGroup:AddToggle("ImageEspToggle", { Text = "Image ESP", Default = false,
+    Callback = function(Value) ESP_STATE.Enabled = Value; espRefreshAll() end })
+EspGroup:AddSlider("EspMaxDistance", { Text = "Max Distance", Default = 500, Min = 50, Max = 2000, Rounding = 0, Suffix = " studs",
+    Callback = function(Value) ESP_CONFIG.MaxDistance = Value end })
+EspGroup:AddSlider("EspBaseSize", { Text = "Base Size", Default = 10, Min = 1, Max = 50, Rounding = 1,
+    Callback = function(Value)
+        ESP_CONFIG.BaseSize = Value
+        for _, data in pairs(espData) do data.BaseSize = Value end
+    end })
+
+-- PCLD ESP
+local PCLDEnabled = false
+local TweenService_PCLD = game:GetService("TweenService")
+
+local function PCLD_ApplyCloned(clonedPCLD)
+    pcall(function()
+        if PCLDEnabled then
+            clonedPCLD.Transparency = 0.7
+            clonedPCLD.Color = Color3.fromRGB(255, 255, 255)
+            local sb = clonedPCLD:FindFirstChild("SelectionBox")
+            if not sb then
+                sb = Instance.new("SelectionBox")
+                sb.Adornee = clonedPCLD
+                sb.Parent = clonedPCLD
+            end
+            sb.Color3 = Color3.fromRGB(255, 255, 255)
+            sb.LineThickness = 0.01
+        else
+            clonedPCLD.Transparency = 1
+            local sb = clonedPCLD:FindFirstChild("SelectionBox")
+            if sb then sb:Destroy() end
+        end
+    end)
+end
+
+local function PCLD_UpdateParent(parent)
+    if parent.Name ~= "PlayerCharacterLocationDetector" then return end
+    task.spawn(function()
+        if parent.Position == Vector3.zero then
+            while parent and parent.Position == Vector3.zero do task.wait() end
+        end
+        if not parent.Parent then return end
+        local clonedPCLD = parent:FindFirstChild("ClonedPCLD")
+        if PCLDEnabled and not clonedPCLD then
+            clonedPCLD = parent:Clone()
+            clonedPCLD.Name = "ClonedPCLD"
+            clonedPCLD.Material = Enum.Material.Neon
+            clonedPCLD.Parent = parent
+            parent:GetPropertyChangedSignal("CFrame"):Connect(function()
+                if not clonedPCLD.Parent then return end
+                pcall(function()
+                    TweenService_PCLD:Create(clonedPCLD, TweenInfo.new(0.15, Enum.EasingStyle.Linear), { CFrame = parent.CFrame }):Play()
+                end)
+            end)
+        end
+        if clonedPCLD then PCLD_ApplyCloned(clonedPCLD) end
+    end)
+end
+
+local function PCLD_UpdateAll()
+    for _, v in ipairs(Workspace:GetChildren()) do PCLD_UpdateParent(v) end
+end
+
+Workspace.ChildAdded:Connect(function(child)
+    if PCLDEnabled then PCLD_UpdateParent(child) end
+end)
+
+EspGroup:AddToggle("PCLDViewToggle", {
+    Text = "PCLD View",
+    Default = false,
+    Callback = function(value)
+        PCLDEnabled = value
+        if value then PCLD_UpdateAll()
+        else
+            for _, v in ipairs(Workspace:GetChildren()) do
+                if v.Name == "PlayerCharacterLocationDetector" then
+                    local clone = v:FindFirstChild("ClonedPCLD")
+                    if clone then
+                        clone.Transparency = 1
+                        local sb = clone:FindFirstChild("SelectionBox")
+                        if sb then sb:Destroy() end
+                    end
+                end
+            end
+        end
+    end,
+})
+
+task.spawn(function()
+    local accumulatedTime = 0
+    RunService.RenderStepped:Connect(function(dt)
+        accumulatedTime += dt
+        for _, data in pairs(espData) do
+            if data.Billboard and data.Container and data.Image then
+                data.Container.Rotation = (data.Container.Rotation + ESP_ROTATE_SPEED * dt) % 360
+                local base = data.BaseSize or ESP_CONFIG.BaseSize
+                local factor = 1 + math.sin(accumulatedTime * (math.pi * 2 / ESP_PULSE_SPEED)) * ESP_PULSE_AMOUNT
+                local t = (factor - (1 - ESP_PULSE_AMOUNT)) / (2 * ESP_PULSE_AMOUNT)
+                t = math.clamp(t, 0, 1)
+                local color = ESP_COLOR_SMALL:Lerp(ESP_COLOR_LARGE, t)
+                local size = base * factor
+                data.Billboard.Size = UDim2.fromScale(size, size)
+                data.Image.ImageColor3 = color
+            end
+        end
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            for player, data in pairs(espData) do
+                local char = player.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if root and data.Billboard then
+                    local dist = (myRoot.Position - root.Position).Magnitude
+                    local visible = dist <= ESP_CONFIG.MaxDistance and ESP_STATE.Enabled
+                    data.Billboard.Enabled = visible
+                end
+            end
+        end
+    end
+end)
+
+-- =====================================================
+-- Visuals: Black Hole Texture
+-- =====================================================
+local BlackHoleGroup = Tabs.VisualsTab:AddLeftGroupbox("Black Hole Texture")
+
+local BHK_Master = {
+    enabled = false,
+    watcherConn = nil,
+    appliedList = {},
+    selectedTexture = "blackhole1",
+}
+
+local BHK_Textures = {
+    blackhole1 = { assetId = "rbxassetid://99340233207059", display = "blackhole1", image = "rbxassetid://99340233207059" },
+    blackhole2 = { assetId = "rbxassetid://8387416709", display = "blackhole2", image = "rbxassetid://8387416709" },
+    blackhole3 = { assetId = "rbxassetid://8777548884", display = "blackhole3", image = "rbxassetid://8777548884" },
+}
+
+local function BHK_applyRealisticBH(model, assetId)
+    if not model then return end
+    local success, realisticModel = pcall(function() return game:GetObjects(assetId)[1] end)
+    if not success or not realisticModel then return end
+    local hole = model:FindFirstChild("Hole")
+    if not hole then realisticModel:Destroy() return end
+    for _, obj in pairs(realisticModel:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Beam") or obj:IsA("Sound") or obj:IsA("Trail") then
+            local clone = obj:Clone()
+            clone.Parent = hole
+            table.insert(BHK_Master.appliedList, clone)
+        end
+        if obj:IsA("BillboardGui") then
+            local currentGui = hole:FindFirstChild("BillboardGui")
+            if currentGui then
+                local newGui = obj:Clone()
+                newGui.Parent = hole
+                if currentGui:FindFirstChild("Large") and newGui:FindFirstChild("Large") then currentGui.Large.Image = newGui.Large.Image end
+                if currentGui:FindFirstChild("Small") and newGui:FindFirstChild("Small") then currentGui.Small.Image = newGui.Small.Image end
+                newGui:Destroy()
+            end
+        end
+    end
+    realisticModel:Destroy()
+end
+
+local function BHK_applyAll(model)
+    if not model then return end
+    local tex = BHK_Textures[BHK_Master.selectedTexture]
+    if tex then BHK_applyRealisticBH(model, tex.assetId) end
+end
+
+local function BHK_startAll()
+    BHK_Master.enabled = true
+    BHK_Master.appliedList = {}
+    local existing = Workspace:FindFirstChild("BlackHoleKick")
+    if existing then BHK_applyAll(existing) end
+    if BHK_Master.watcherConn then pcall(function() BHK_Master.watcherConn:Disconnect() end) end
+    BHK_Master.watcherConn = Workspace.ChildAdded:Connect(function(child)
+        if child.Name == "BlackHoleKick" then
+            task.wait(0.1)
+            BHK_applyAll(child)
+        end
+    end)
+end
+
+local function BHK_stopAll()
+    BHK_Master.enabled = false
+    if BHK_Master.watcherConn then pcall(function() BHK_Master.watcherConn:Disconnect() end) BHK_Master.watcherConn = nil end
+    for _, obj in ipairs(BHK_Master.appliedList) do
+        pcall(function() if obj and obj.Parent then obj:Destroy() end end)
+    end
+    BHK_Master.appliedList = {}
+end
+
+BlackHoleGroup:AddDropdown("BlackHoleTextureSelect", {
+    Text = "Texture Select",
+    Values = { "blackhole1", "blackhole2", "blackhole3" },
+    Default = "blackhole1",
+    Callback = function(v)
+        BHK_Master.selectedTexture = v
+        if BHK_Master.enabled then
+            BHK_stopAll()
+            task.wait(0.1)
+            BHK_startAll()
+        end
+    end,
+})
+
+BlackHoleGroup:AddToggle("BlackHoleToggle", {
+    Text = "Black Hole Texture",
+    Default = false,
+    Callback = function(v)
+        if v then BHK_startAll() else BHK_stopAll() end
+    end,
+})
+
+-- =====================================================
+-- Visuals: Time
+-- =====================================================
+local ClyrixTimeLighting = game:GetService("Lighting")
+local ClyrixTimeOriginalClock = ClyrixTimeLighting.ClockTime
+local ClyrixTimeOriginalOfDay = ClyrixTimeLighting.TimeOfDay
+local ClyrixTimeEnabled = false
+local ClyrixTimeHour = 12
+local ClyrixTimeMinute = 0
+
+local ClyrixTimeGroup = Tabs.VisualsTab:AddRightGroupbox("Time", "clock")
+
+ClyrixTimeGroup:AddToggle("TimeEnable", {
+    Text = "Enable Time Change",
+    Default = false,
+    Callback = function(value)
+        ClyrixTimeEnabled = value
+        if value then
+            ClyrixTimeOriginalClock = ClyrixTimeLighting.ClockTime
+            ClyrixTimeOriginalOfDay = ClyrixTimeLighting.TimeOfDay
+        else
+            ClyrixTimeLighting.ClockTime = ClyrixTimeOriginalClock
+            ClyrixTimeLighting.TimeOfDay = ClyrixTimeOriginalOfDay
+        end
+    end,
+})
+
+ClyrixTimeGroup:AddDropdown("TimePreset", {
+    Text = "Preset",
+    Values = { "Morning (06:00)", "Noon (12:00)", "Evening (18:00)", "Night (00:00)", "Midnight (03:00)" },
+    Default = 2,
+    Callback = function(value)
+        if value == "Morning (06:00)" then ClyrixTimeHour = 6
+        elseif value == "Noon (12:00)" then ClyrixTimeHour = 12
+        elseif value == "Evening (18:00)" then ClyrixTimeHour = 18
+        elseif value == "Night (00:00)" then ClyrixTimeHour = 0
+        elseif value == "Midnight (03:00)" then ClyrixTimeHour = 3 end
+        ClyrixTimeMinute = 0
+        if ClyrixTimeEnabled then ClyrixTimeLighting.ClockTime = ClyrixTimeHour + ClyrixTimeMinute / 60 end
+    end,
+})
+
+ClyrixTimeGroup:AddSlider("TimeHour", {
+    Text = "Hour", Default = 12, Min = 0, Max = 23, Rounding = 0,
+    Callback = function(value)
+        ClyrixTimeHour = value
+        if ClyrixTimeEnabled then ClyrixTimeLighting.ClockTime = ClyrixTimeHour + ClyrixTimeMinute / 60 end
+    end,
+})
+
+ClyrixTimeGroup:AddSlider("TimeMinute", {
+    Text = "Minute", Default = 0, Min = 0, Max = 59, Rounding = 0,
+    Callback = function(value)
+        ClyrixTimeMinute = value
+        if ClyrixTimeEnabled then ClyrixTimeLighting.ClockTime = ClyrixTimeHour + ClyrixTimeMinute / 60 end
+    end,
+})
+
+ClyrixTimeGroup:AddButton({
+    Text = "Reset (Original Time)",
+    Func = function()
+        ClyrixTimeEnabled = false
+        pcall(function() Toggles.TimeEnable:SetValue(false) end)
+        ClyrixTimeLighting.ClockTime = ClyrixTimeOriginalClock
+        ClyrixTimeLighting.TimeOfDay = ClyrixTimeOriginalOfDay
+    end,
+})
+
+-- =====================================================
+-- Visuals: Shader (Sky + Snow)
+-- =====================================================
+local ShaderGroup = Tabs.VisualsTab:AddRightGroupbox("Shader", "cloud")
+
+-- Sky Changer
+local SkyLightingSvc = game:GetService("Lighting")
+local SkyRService = game:GetService("RunService")
+
+local SkyPresets = {
+    ["Rainy"] = {
+        SkyboxBk = "rbxassetid://18703245834", SkyboxDn = "rbxassetid://18703243349",
+        SkyboxFt = "rbxassetid://18703240532", SkyboxLf = "rbxassetid://18703237556",
+        SkyboxRt = "rbxassetid://18703235430", SkyboxUp = "rbxassetid://18703232671",
+        ClockTime = 15, Brightness = 1.5,
+        FogColor = Color3.fromRGB(100, 110, 120), FogStart = 0, FogEnd = 800,
+        Ambient = Color3.fromRGB(80, 85, 95), OutdoorAmbient = Color3.fromRGB(90, 95, 105),
+        CCTint = Color3.fromRGB(180, 190, 200), CCSaturation = -0.2, CCContrast = 0.1, CCBrightness = -0.05,
+        AtmosDensity = 0.5, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(100, 110, 120),
+        AtmosDecay = Color3.fromRGB(50, 55, 65), AtmosGlare = 0, AtmosHaze = 3,
+    },
+    ["Storm"] = {
+        SkyboxBk = "rbxassetid://15502511288", SkyboxDn = "rbxassetid://15502508460",
+        SkyboxFt = "rbxassetid://15502510289", SkyboxLf = "rbxassetid://15502507918",
+        SkyboxRt = "rbxassetid://15502509398", SkyboxUp = "rbxassetid://15502511911",
+        ClockTime = 13, Brightness = 0.8,
+        FogColor = Color3.fromRGB(50, 55, 65), FogStart = 0, FogEnd = 500,
+        Ambient = Color3.fromRGB(40, 45, 55), OutdoorAmbient = Color3.fromRGB(50, 55, 65),
+        CCTint = Color3.fromRGB(150, 155, 165), CCSaturation = -0.4, CCContrast = 0.3, CCBrightness = -0.15,
+        AtmosDensity = 0.7, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(50, 55, 65),
+        AtmosDecay = Color3.fromRGB(30, 35, 45), AtmosGlare = 0, AtmosHaze = 4,
+    },
+    ["Sunset"] = {
+        SkyboxBk = "rbxassetid://600830446", SkyboxDn = "rbxassetid://600831635",
+        SkyboxFt = "rbxassetid://600832720", SkyboxLf = "rbxassetid://600886090",
+        SkyboxRt = "rbxassetid://600833862", SkyboxUp = "rbxassetid://600835177",
+        ClockTime = 18, Brightness = 2,
+        FogColor = Color3.fromRGB(255, 150, 100), FogStart = 0, FogEnd = 2000,
+        Ambient = Color3.fromRGB(120, 80, 60), OutdoorAmbient = Color3.fromRGB(180, 120, 90),
+        CCTint = Color3.fromRGB(255, 200, 160), CCSaturation = 0.2, CCContrast = 0.15, CCBrightness = 0.05,
+        AtmosDensity = 0.35, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(255, 170, 120),
+        AtmosDecay = Color3.fromRGB(120, 70, 50), AtmosGlare = 0.2, AtmosHaze = 2,
+    },
+    ["Night"] = {
+        SkyboxBk = "rbxassetid://12064107", SkyboxDn = "rbxassetid://12064152",
+        SkyboxFt = "rbxassetid://12064121", SkyboxLf = "rbxassetid://12063984",
+        SkyboxRt = "rbxassetid://12064115", SkyboxUp = "rbxassetid://12064131",
+        ClockTime = 0, Brightness = 1,
+        FogColor = Color3.fromRGB(20, 25, 40), FogStart = 0, FogEnd = 1500,
+        Ambient = Color3.fromRGB(30, 35, 50), OutdoorAmbient = Color3.fromRGB(40, 45, 60),
+        CCTint = Color3.fromRGB(180, 200, 255), CCSaturation = -0.1, CCContrast = 0.2, CCBrightness = -0.1,
+        AtmosDensity = 0.4, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(60, 70, 100),
+        AtmosDecay = Color3.fromRGB(20, 25, 40), AtmosGlare = 0, AtmosHaze = 2,
+    },
+    ["Space"] = {
+        SkyboxBk = "rbxassetid://159248188", SkyboxDn = "rbxassetid://159248183",
+        SkyboxFt = "rbxassetid://159248187", SkyboxLf = "rbxassetid://159248173",
+        SkyboxRt = "rbxassetid://159248192", SkyboxUp = "rbxassetid://159248176",
+        ClockTime = 0, Brightness = 1.5,
+        FogColor = Color3.fromRGB(10, 10, 20), FogStart = 0, FogEnd = 5000,
+        Ambient = Color3.fromRGB(20, 20, 40), OutdoorAmbient = Color3.fromRGB(30, 30, 50),
+        CCTint = Color3.fromRGB(200, 200, 255), CCSaturation = 0.3, CCContrast = 0.4, CCBrightness = 0,
+        AtmosDensity = 0.1, AtmosOffset = 0.25, AtmosColor = Color3.fromRGB(100, 100, 200),
+        AtmosDecay = Color3.fromRGB(50, 50, 100), AtmosGlare = 1, AtmosHaze = 0.5,
+    },
+    ["HD Realistic"] = {
+        SkyboxBk = "rbxassetid://16553658937", SkyboxDn = "rbxassetid://16553660713",
+        SkyboxFt = "rbxassetid://16553662144", SkyboxLf = "rbxassetid://16553664042",
+        SkyboxRt = "rbxassetid://16553665766", SkyboxUp = "rbxassetid://16553667750",
+        ClockTime = 14, Brightness = 3,
+        FogColor = Color3.fromRGB(200, 205, 215), FogStart = 0, FogEnd = 5000,
+        Ambient = Color3.fromRGB(80, 85, 95), OutdoorAmbient = Color3.fromRGB(150, 155, 165),
+        CCTint = Color3.fromRGB(255, 250, 245), CCSaturation = 0.1, CCContrast = 0.15, CCBrightness = 0.02,
+        AtmosDensity = 0.3, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(200, 205, 215),
+        AtmosDecay = Color3.fromRGB(110, 118, 135), AtmosGlare = 0.1, AtmosHaze = 1.5,
+    },
+    ["Snowy"] = {
+        SkyboxBk = "rbxassetid://155657655", SkyboxDn = "rbxassetid://155674246",
+        SkyboxFt = "rbxassetid://155657609", SkyboxLf = "rbxassetid://155657671",
+        SkyboxRt = "rbxassetid://155657619", SkyboxUp = "rbxassetid://155674931",
+        ClockTime = 14, Brightness = 2.5,
+        FogColor = Color3.fromRGB(220, 225, 235), FogStart = 0, FogEnd = 1500,
+        Ambient = Color3.fromRGB(180, 185, 195), OutdoorAmbient = Color3.fromRGB(220, 225, 235),
+        CCTint = Color3.fromRGB(230, 240, 255), CCSaturation = -0.15, CCContrast = 0.1, CCBrightness = 0.05,
+        AtmosDensity = 0.45, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(220, 225, 235),
+        AtmosDecay = Color3.fromRGB(150, 155, 165), AtmosGlare = 0.05, AtmosHaze = 2.5,
+    },
+    ["Horror"] = {
+        SkyboxBk = "rbxassetid://15502511288", SkyboxDn = "rbxassetid://15502508460",
+        SkyboxFt = "rbxassetid://15502510289", SkyboxLf = "rbxassetid://15502507918",
+        SkyboxRt = "rbxassetid://15502509398", SkyboxUp = "rbxassetid://15502511911",
+        ClockTime = 0, Brightness = 0.5,
+        FogColor = Color3.fromRGB(10, 10, 15), FogStart = 0, FogEnd = 200,
+        Ambient = Color3.fromRGB(15, 15, 20), OutdoorAmbient = Color3.fromRGB(20, 20, 25),
+        CCTint = Color3.fromRGB(140, 130, 130), CCSaturation = -0.7, CCContrast = 0.4, CCBrightness = -0.2,
+        AtmosDensity = 0.6, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(40, 40, 50),
+        AtmosDecay = Color3.fromRGB(10, 10, 20), AtmosGlare = 0, AtmosHaze = 5,
+    },
+    ["Aurora"] = {
+        SkyboxBk = "rbxassetid://135207744", SkyboxDn = "rbxassetid://135207662",
+        SkyboxFt = "rbxassetid://135207770", SkyboxLf = "rbxassetid://135207615",
+        SkyboxRt = "rbxassetid://135207695", SkyboxUp = "rbxassetid://135207794",
+        ClockTime = 0, Brightness = 2,
+        FogColor = Color3.fromRGB(30, 60, 80), FogStart = 0, FogEnd = 3000,
+        Ambient = Color3.fromRGB(40, 80, 100), OutdoorAmbient = Color3.fromRGB(60, 120, 140),
+        CCTint = Color3.fromRGB(140, 255, 200), CCSaturation = 0.6, CCContrast = 0.3, CCBrightness = 0,
+        AtmosDensity = 0.25, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(100, 255, 200),
+        AtmosDecay = Color3.fromRGB(60, 180, 140), AtmosGlare = 0.5, AtmosHaze = 1.2,
+    },
+    ["Pink Dream"] = {
+        SkyboxBk = "rbxassetid://151165214", SkyboxDn = "rbxassetid://151165197",
+        SkyboxFt = "rbxassetid://151165224", SkyboxLf = "rbxassetid://151165191",
+        SkyboxRt = "rbxassetid://151165206", SkyboxUp = "rbxassetid://151165227",
+        ClockTime = 17, Brightness = 2.5,
+        FogColor = Color3.fromRGB(255, 200, 220), FogStart = 0, FogEnd = 3000,
+        Ambient = Color3.fromRGB(240, 190, 210), OutdoorAmbient = Color3.fromRGB(255, 210, 230),
+        CCTint = Color3.fromRGB(255, 200, 220), CCSaturation = 0.4, CCContrast = 0.1, CCBrightness = 0.1,
+        AtmosDensity = 0.3, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(255, 200, 220),
+        AtmosDecay = Color3.fromRGB(255, 150, 200), AtmosGlare = 0.3, AtmosHaze = 1.5,
+    },
+    ["Galaxy"] = {
+        SkyboxBk = "rbxassetid://15983968922", SkyboxDn = "rbxassetid://15983966825",
+        SkyboxFt = "rbxassetid://15983965025", SkyboxLf = "rbxassetid://15983967420",
+        SkyboxRt = "rbxassetid://15983966246", SkyboxUp = "rbxassetid://15983964246",
+        ClockTime = 0, Brightness = 1.8,
+        FogColor = Color3.fromRGB(15, 10, 30), FogStart = 0, FogEnd = 8000,
+        Ambient = Color3.fromRGB(40, 30, 70), OutdoorAmbient = Color3.fromRGB(60, 40, 100),
+        CCTint = Color3.fromRGB(200, 180, 255), CCSaturation = 0.5, CCContrast = 0.35, CCBrightness = -0.05,
+        AtmosDensity = 0.15, AtmosOffset = 0.25, AtmosColor = Color3.fromRGB(120, 100, 200),
+        AtmosDecay = Color3.fromRGB(60, 40, 120), AtmosGlare = 0.8, AtmosHaze = 0.8,
+    },
+    ["Cherry Blossom"] = {
+        SkyboxBk = "rbxassetid://271042516", SkyboxDn = "rbxassetid://271077243",
+        SkyboxFt = "rbxassetid://271042556", SkyboxLf = "rbxassetid://271042310",
+        SkyboxRt = "rbxassetid://271042467", SkyboxUp = "rbxassetid://271077958",
+        ClockTime = 14, Brightness = 3,
+        FogColor = Color3.fromRGB(255, 230, 240), FogStart = 0, FogEnd = 4000,
+        Ambient = Color3.fromRGB(240, 210, 220), OutdoorAmbient = Color3.fromRGB(255, 230, 240),
+        CCTint = Color3.fromRGB(255, 220, 235), CCSaturation = 0.35, CCContrast = 0.1, CCBrightness = 0.08,
+        AtmosDensity = 0.28, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(255, 230, 240),
+        AtmosDecay = Color3.fromRGB(255, 180, 210), AtmosGlare = 0.15, AtmosHaze = 1.3,
+    },
+    ["Purple Haze"] = {
+        SkyboxBk = "rbxassetid://264908339", SkyboxDn = "rbxassetid://264907909",
+        SkyboxFt = "rbxassetid://264909420", SkyboxLf = "rbxassetid://264909758",
+        SkyboxRt = "rbxassetid://264908886", SkyboxUp = "rbxassetid://264907379",
+        ClockTime = 17.5, Brightness = 2,
+        FogColor = Color3.fromRGB(120, 60, 150), FogStart = 0, FogEnd = 2500,
+        Ambient = Color3.fromRGB(100, 60, 130), OutdoorAmbient = Color3.fromRGB(150, 100, 180),
+        CCTint = Color3.fromRGB(200, 150, 255), CCSaturation = 0.4, CCContrast = 0.25, CCBrightness = 0,
+        AtmosDensity = 0.4, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(180, 120, 220),
+        AtmosDecay = Color3.fromRGB(120, 70, 160), AtmosGlare = 0.25, AtmosHaze = 2,
+    },
+    ["Golden Hour"] = {
+        SkyboxBk = "rbxassetid://600830446", SkyboxDn = "rbxassetid://600831635",
+        SkyboxFt = "rbxassetid://600832720", SkyboxLf = "rbxassetid://600886090",
+        SkyboxRt = "rbxassetid://600833862", SkyboxUp = "rbxassetid://600835177",
+        ClockTime = 17, Brightness = 2.8,
+        FogColor = Color3.fromRGB(255, 200, 120), FogStart = 0, FogEnd = 3000,
+        Ambient = Color3.fromRGB(180, 130, 80), OutdoorAmbient = Color3.fromRGB(255, 200, 140),
+        CCTint = Color3.fromRGB(255, 220, 160), CCSaturation = 0.3, CCContrast = 0.2, CCBrightness = 0.1,
+        AtmosDensity = 0.35, AtmosOffset = 0.25, AtmosColor = Color3.fromRGB(255, 210, 150),
+        AtmosDecay = Color3.fromRGB(200, 140, 80), AtmosGlare = 0.4, AtmosHaze = 1.8,
+    },
+    ["Cyberpunk"] = {
+        SkyboxBk = "rbxassetid://15983968922", SkyboxDn = "rbxassetid://15983966825",
+        SkyboxFt = "rbxassetid://15983965025", SkyboxLf = "rbxassetid://15983967420",
+        SkyboxRt = "rbxassetid://15983966246", SkyboxUp = "rbxassetid://15983964246",
+        ClockTime = 22, Brightness = 2,
+        FogColor = Color3.fromRGB(50, 20, 100), FogStart = 0, FogEnd = 1500,
+        Ambient = Color3.fromRGB(80, 20, 150), OutdoorAmbient = Color3.fromRGB(120, 40, 180),
+        CCTint = Color3.fromRGB(255, 100, 220), CCSaturation = 0.9, CCContrast = 0.4, CCBrightness = 0,
+        AtmosDensity = 0.5, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(200, 50, 200),
+        AtmosDecay = Color3.fromRGB(100, 20, 180), AtmosGlare = 0.6, AtmosHaze = 2.5,
+    },
+    ["Tropical"] = {
+        SkyboxBk = "rbxassetid://16553658937", SkyboxDn = "rbxassetid://16553660713",
+        SkyboxFt = "rbxassetid://16553662144", SkyboxLf = "rbxassetid://16553664042",
+        SkyboxRt = "rbxassetid://16553665766", SkyboxUp = "rbxassetid://16553667750",
+        ClockTime = 13, Brightness = 3.5,
+        FogColor = Color3.fromRGB(180, 230, 255), FogStart = 0, FogEnd = 6000,
+        Ambient = Color3.fromRGB(150, 200, 240), OutdoorAmbient = Color3.fromRGB(200, 240, 255),
+        CCTint = Color3.fromRGB(255, 250, 220), CCSaturation = 0.55, CCContrast = 0.15, CCBrightness = 0.15,
+        AtmosDensity = 0.25, AtmosOffset = 0.1, AtmosColor = Color3.fromRGB(200, 240, 255),
+        AtmosDecay = Color3.fromRGB(120, 180, 220), AtmosGlare = 0.2, AtmosHaze = 1.2,
+    },
+    ["Deep Ocean"] = {
+        SkyboxBk = "rbxassetid://218955819", SkyboxDn = "rbxassetid://218953419",
+        SkyboxFt = "rbxassetid://218954524", SkyboxLf = "rbxassetid://218958493",
+        SkyboxRt = "rbxassetid://218957134", SkyboxUp = "rbxassetid://218950090",
+        ClockTime = 14, Brightness = 1.5,
+        FogColor = Color3.fromRGB(20, 80, 120), FogStart = 0, FogEnd = 800,
+        Ambient = Color3.fromRGB(30, 100, 150), OutdoorAmbient = Color3.fromRGB(40, 120, 170),
+        CCTint = Color3.fromRGB(100, 200, 255), CCSaturation = 0.4, CCContrast = 0.25, CCBrightness = -0.1,
+        AtmosDensity = 0.6, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(40, 150, 200),
+        AtmosDecay = Color3.fromRGB(20, 80, 120), AtmosGlare = 0.15, AtmosHaze = 3,
+    },
+    ["Crimson"] = {
+        SkyboxBk = "rbxassetid://15502511288", SkyboxDn = "rbxassetid://15502508460",
+        SkyboxFt = "rbxassetid://15502510289", SkyboxLf = "rbxassetid://15502507918",
+        SkyboxRt = "rbxassetid://15502509398", SkyboxUp = "rbxassetid://15502511911",
+        ClockTime = 19, Brightness = 1.5,
+        FogColor = Color3.fromRGB(120, 20, 30), FogStart = 0, FogEnd = 1200,
+        Ambient = Color3.fromRGB(100, 15, 25), OutdoorAmbient = Color3.fromRGB(150, 30, 40),
+        CCTint = Color3.fromRGB(255, 100, 100), CCSaturation = 0.7, CCContrast = 0.4, CCBrightness = -0.05,
+        AtmosDensity = 0.5, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(180, 40, 50),
+        AtmosDecay = Color3.fromRGB(100, 20, 30), AtmosGlare = 0.2, AtmosHaze = 2.5,
+    },
+    ["Emerald"] = {
+        SkyboxBk = "rbxassetid://155657655", SkyboxDn = "rbxassetid://155674246",
+        SkyboxFt = "rbxassetid://155657609", SkyboxLf = "rbxassetid://155657671",
+        SkyboxRt = "rbxassetid://155657619", SkyboxUp = "rbxassetid://155674931",
+        ClockTime = 14, Brightness = 2.5,
+        FogColor = Color3.fromRGB(180, 240, 200), FogStart = 0, FogEnd = 2500,
+        Ambient = Color3.fromRGB(140, 220, 170), OutdoorAmbient = Color3.fromRGB(180, 240, 200),
+        CCTint = Color3.fromRGB(200, 255, 220), CCSaturation = 0.5, CCContrast = 0.15, CCBrightness = 0.08,
+        AtmosDensity = 0.35, AtmosOffset = 0.15, AtmosColor = Color3.fromRGB(180, 255, 200),
+        AtmosDecay = Color3.fromRGB(80, 180, 120), AtmosGlare = 0.15, AtmosHaze = 1.5,
+    },
+    ["Midnight Purple"] = {
+        SkyboxBk = "rbxassetid://135207744", SkyboxDn = "rbxassetid://135207662",
+        SkyboxFt = "rbxassetid://135207770", SkyboxLf = "rbxassetid://135207615",
+        SkyboxRt = "rbxassetid://135207695", SkyboxUp = "rbxassetid://135207794",
+        ClockTime = 0, Brightness = 1.2,
+        FogColor = Color3.fromRGB(25, 15, 50), FogStart = 0, FogEnd = 3000,
+        Ambient = Color3.fromRGB(50, 30, 80), OutdoorAmbient = Color3.fromRGB(70, 45, 110),
+        CCTint = Color3.fromRGB(180, 140, 255), CCSaturation = 0.4, CCContrast = 0.3, CCBrightness = -0.1,
+        AtmosDensity = 0.35, AtmosOffset = 0.2, AtmosColor = Color3.fromRGB(100, 60, 180),
+        AtmosDecay = Color3.fromRGB(50, 30, 100), AtmosGlare = 0.3, AtmosHaze = 1.8,
+    },
+}
+
+local skyEnabled = false
+local skyCurrentSky, skyCurrentCC, skyCurrentAtmosCustom = nil, nil, nil
+local skyActivePresetName = nil
+local skyPendingPreset = nil
+local skyOriginal = nil
+local skyEnforceConn = nil
+
+local function skySnapshotOriginal()
+    if skyOriginal then return end
+    skyOriginal = {
+        Brightness = SkyLightingSvc.Brightness, ClockTime = SkyLightingSvc.ClockTime,
+        FogColor = SkyLightingSvc.FogColor, FogStart = SkyLightingSvc.FogStart, FogEnd = SkyLightingSvc.FogEnd,
+        Ambient = SkyLightingSvc.Ambient, OutdoorAmbient = SkyLightingSvc.OutdoorAmbient,
+    }
+    local atmos = SkyLightingSvc:FindFirstChildOfClass("Atmosphere")
+    if atmos then
+        skyOriginal.AtmosRef = atmos
+        skyOriginal.AtmosDensity = atmos.Density; skyOriginal.AtmosOffset = atmos.Offset
+        skyOriginal.AtmosColor = atmos.Color; skyOriginal.AtmosDecay = atmos.Decay
+        skyOriginal.AtmosGlare = atmos.Glare; skyOriginal.AtmosHaze = atmos.Haze
+    end
+end
+
+local function skyDestroyCustom()
+    if skyCurrentSky then pcall(function() skyCurrentSky:Destroy() end) skyCurrentSky = nil end
+    if skyCurrentCC then pcall(function() skyCurrentCC:Destroy() end) skyCurrentCC = nil end
+    if skyCurrentAtmosCustom then pcall(function() skyCurrentAtmosCustom:Destroy() end) skyCurrentAtmosCustom = nil end
+end
+
+local function skyApplyPreset(name)
+    local p = SkyPresets[name]
+    if not p then return end
+    skyActivePresetName = name
+    skySnapshotOriginal()
+    skyDestroyCustom()
+
+    local sky = Instance.new("Sky")
+    sky.Name = "_SkyChanger"
+    sky.SkyboxBk = p.SkyboxBk; sky.SkyboxDn = p.SkyboxDn; sky.SkyboxFt = p.SkyboxFt
+    sky.SkyboxLf = p.SkyboxLf; sky.SkyboxRt = p.SkyboxRt; sky.SkyboxUp = p.SkyboxUp
+    sky.SunAngularSize = 12; sky.MoonAngularSize = 10; sky.StarCount = 3000
+    sky.Parent = SkyLightingSvc
+    skyCurrentSky = sky
+
+    local cc = Instance.new("ColorCorrectionEffect")
+    cc.Name = "_SkyCC"
+    cc.TintColor = p.CCTint; cc.Saturation = p.CCSaturation
+    cc.Contrast = p.CCContrast; cc.Brightness = p.CCBrightness
+    cc.Parent = SkyLightingSvc
+    skyCurrentCC = cc
+
+    local atmos = SkyLightingSvc:FindFirstChildOfClass("Atmosphere")
+    if atmos then
+        atmos.Density = p.AtmosDensity; atmos.Offset = p.AtmosOffset
+        atmos.Color = p.AtmosColor; atmos.Decay = p.AtmosDecay
+        atmos.Glare = p.AtmosGlare; atmos.Haze = p.AtmosHaze
+    else
+        local a = Instance.new("Atmosphere")
+        a.Name = "_SkyAtmos"
+        a.Density = p.AtmosDensity; a.Offset = p.AtmosOffset
+        a.Color = p.AtmosColor; a.Decay = p.AtmosDecay
+        a.Glare = p.AtmosGlare; a.Haze = p.AtmosHaze
+        a.Parent = SkyLightingSvc
+        skyCurrentAtmosCustom = a
+    end
+end
+
+local function skyStartEnforce()
+    if skyEnforceConn then skyEnforceConn:Disconnect() end
+    skyEnforceConn = SkyRService.Heartbeat:Connect(function()
+        if not skyEnabled or not skyActivePresetName then return end
+        local p = SkyPresets[skyActivePresetName]
+        if not p then return end
+        pcall(function()
+            for _, inst in ipairs(SkyLightingSvc:GetChildren()) do
+                if inst:IsA("Sky") and inst ~= skyCurrentSky and inst.Enabled then inst.Enabled = false end
+            end
+            if skyCurrentSky and skyCurrentSky.Parent ~= SkyLightingSvc then skyCurrentSky.Parent = SkyLightingSvc end
+            if skyCurrentCC and skyCurrentCC.Parent ~= SkyLightingSvc then skyCurrentCC.Parent = SkyLightingSvc end
+            SkyLightingSvc.Brightness = p.Brightness; SkyLightingSvc.ClockTime = p.ClockTime
+            SkyLightingSvc.FogColor = p.FogColor; SkyLightingSvc.FogStart = p.FogStart; SkyLightingSvc.FogEnd = p.FogEnd
+            SkyLightingSvc.Ambient = p.Ambient; SkyLightingSvc.OutdoorAmbient = p.OutdoorAmbient
+        end)
+    end)
+end
+
+local function skyStopEnforce()
+    if skyEnforceConn then skyEnforceConn:Disconnect() skyEnforceConn = nil end
+end
+
+local function skyRestoreOriginal()
+    skyStopEnforce()
+    skyDestroyCustom()
+    if skyOriginal then
+        pcall(function()
+            SkyLightingSvc.Brightness = skyOriginal.Brightness
+            SkyLightingSvc.ClockTime = skyOriginal.ClockTime
+            SkyLightingSvc.FogColor = skyOriginal.FogColor
+            SkyLightingSvc.FogStart = skyOriginal.FogStart
+            SkyLightingSvc.FogEnd = skyOriginal.FogEnd
+            SkyLightingSvc.Ambient = skyOriginal.Ambient
+            SkyLightingSvc.OutdoorAmbient = skyOriginal.OutdoorAmbient
+        end)
+        if skyOriginal.AtmosRef and skyOriginal.AtmosRef.Parent then
+            pcall(function()
+                skyOriginal.AtmosRef.Density = skyOriginal.AtmosDensity; skyOriginal.AtmosRef.Offset = skyOriginal.AtmosOffset
+                skyOriginal.AtmosRef.Color = skyOriginal.AtmosColor; skyOriginal.AtmosRef.Decay = skyOriginal.AtmosDecay
+                skyOriginal.AtmosRef.Glare = skyOriginal.AtmosGlare; skyOriginal.AtmosRef.Haze = skyOriginal.AtmosHaze
+            end)
+        end
+    end
+    for _, inst in ipairs(SkyLightingSvc:GetChildren()) do if inst:IsA("Sky") then inst.Enabled = true end end
+    skyActivePresetName = nil
+end
+
+ShaderGroup:AddDivider("Sky Shader")
+
+ShaderGroup:AddToggle("SkyShaderToggle", {
+    Text = "Sky Shader",
+    Default = false,
+    Callback = function(v)
+        skyEnabled = v
+        if v then
+            if skyPendingPreset and SkyPresets[skyPendingPreset] then skyApplyPreset(skyPendingPreset)
+            elseif skyActivePresetName and SkyPresets[skyActivePresetName] then skyApplyPreset(skyActivePresetName)
+            else skyApplyPreset("Rainy") skyPendingPreset = "Rainy" end
+            skyStartEnforce()
+            ClyrixNotify("Sky", "Sky Shader ON", 2)
+        else
+            skyRestoreOriginal()
+            ClyrixNotify("Sky", "Sky Shader OFF", 2)
+        end
+    end,
+})
+
+local skyPresetNames = {}
+for presetName in pairs(SkyPresets) do table.insert(skyPresetNames, presetName) end
+table.sort(skyPresetNames)
+
+ShaderGroup:AddDropdown("SkyPresetSelect", {
+    Text = "Sky Preset",
+    Values = skyPresetNames,
+    Default = "Rainy",
+    Callback = function(Value)
+        pcall(function()
+            local name = Value
+            if type(name) ~= "string" then return end
+            if not SkyPresets[name] then return end
+            if skyEnabled then skyApplyPreset(name) else skyPendingPreset = name end
+        end)
+    end,
+})
+
+ShaderGroup:AddButton({
+    Text = "Restore Original Sky",
+    Func = function()
+        skyRestoreOriginal()
+        skyPendingPreset = nil
+        ClyrixNotify("Sky", "Original sky restored", 2)
+    end,
+})
+
+-- Snow Shader
+local SnowWorkspace = game:GetService("Workspace")
+local SnowRService = game:GetService("RunService")
+local SnowPlayer = game:GetService("Players").LocalPlayer
+
+local snowSettings = { rate = 500, speed = 35, size = 0.6, spread = 20, opacity = 0, color = Color3.fromRGB(255, 255, 255), height = 30, areaSize = 220 }
+local SNOW_TEXTURE = "rbxassetid://118641183"
+local snowFolder = nil
+local snowPart = nil
+local snowEmitter = nil
+local snowFollowConnection = nil
+local snowEnabled = false
+
+local function snowDestroy()
+    if snowFollowConnection then snowFollowConnection:Disconnect() snowFollowConnection = nil end
+    if snowFolder then pcall(function() snowFolder:Destroy() end) snowFolder = nil end
+    snowPart = nil; snowEmitter = nil
+end
+
+local function snowCreate()
+    snowDestroy()
+    snowFolder = Instance.new("Folder"); snowFolder.Name = "_SnowFX"; snowFolder.Parent = SnowWorkspace
+    snowPart = Instance.new("Part"); snowPart.Name = "SnowEmitter"; snowPart.Size = Vector3.new(snowSettings.areaSize, 1, snowSettings.areaSize)
+    snowPart.Transparency = 1; snowPart.Anchored = true; snowPart.CanCollide = false; snowPart.CanQuery = false; snowPart.CanTouch = false; snowPart.CastShadow = false; snowPart.Parent = snowFolder
+    snowEmitter = Instance.new("ParticleEmitter"); snowEmitter.Name = "SnowFlake"; snowEmitter.Texture = SNOW_TEXTURE; snowEmitter.Rate = snowSettings.rate
+    snowEmitter.Lifetime = NumberRange.new(4, 8); snowEmitter.Speed = NumberRange.new(snowSettings.speed * 0.5, snowSettings.speed); snowEmitter.Drag = 0.3
+    snowEmitter.Acceleration = Vector3.new(0, -snowSettings.speed * 0.4, 0); snowEmitter.Rotation = NumberRange.new(0, 360); snowEmitter.RotSpeed = NumberRange.new(-25, 25)
+    snowEmitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, snowSettings.size * 0.5), NumberSequenceKeypoint.new(1, snowSettings.size) })
+    snowEmitter.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, snowSettings.opacity), NumberSequenceKeypoint.new(0.8, snowSettings.opacity), NumberSequenceKeypoint.new(1, 1) })
+    snowEmitter.Color = ColorSequence.new(snowSettings.color); snowEmitter.LightEmission = 0.1; snowEmitter.LightInfluence = 0
+    snowEmitter.Shape = Enum.ParticleEmitterShape.Box; snowEmitter.ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume; snowEmitter.ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward
+    snowEmitter.EmissionDirection = Enum.NormalId.Bottom; snowEmitter.SpreadAngle = Vector2.new(snowSettings.spread, snowSettings.spread); snowEmitter.Orientation = Enum.ParticleOrientation.VelocityParallel
+    snowEmitter.Parent = snowPart
+    snowFollowConnection = SnowRService.RenderStepped:Connect(function()
+        local char = SnowPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        snowPart.CFrame = CFrame.new(hrp.Position + Vector3.new(0, snowSettings.height, 0))
+    end)
+end
+
+local function snowUpdateSize()
+    if not snowEmitter then return end
+    snowEmitter.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, snowSettings.size * 0.5), NumberSequenceKeypoint.new(1, snowSettings.size) })
+end
+
+local function snowSetEnabled(state)
+    snowEnabled = state
+    if state then snowCreate() ClyrixNotify("Snow", "Snowfall enabled", 2)
+    else snowDestroy() ClyrixNotify("Snow", "Snowfall disabled", 2) end
+end
+
+ShaderGroup:AddDivider("Snow Shader")
+
+ShaderGroup:AddToggle("SnowShaderToggle", {
+    Text = "Snow Shader",
+    Default = false,
+    Callback = function(v) snowSetEnabled(v) end,
+})
+
+ShaderGroup:AddSlider("SnowSizeSlider", {
+    Text = "Snow Size",
+    Default = 0.6, Min = 0.1, Max = 3, Rounding = 1,
+    Callback = function(v) snowSettings.size = v if snowEnabled then snowUpdateSize() end end,
+})
+
+SnowPlayer.CharacterAdded:Connect(function()
+    if snowEnabled then task.wait(0.5) if snowEnabled then snowCreate() end end
+end)
+
+end) -- pcall end
+
+if not visualsOK then
+    warn("[Clyrix] Visuals init error: " .. tostring(visualsErr))
+end
+
+-- =====================================================
+-- Player タブ: Mode / Camera / Teleporting / Players / Look / Animations
+-- =====================================================
+local playerOK, playerErr = pcall(function()
+
+local localPlayer = LocalPlayer
+local replicatedStorage = ReplicatedStorage
+
+local function ClyrixNotify(title, desc, time)
+    Library:Notify({ Title = title, Description = desc, Time = time or 5 })
+end
+
+local function getChar2()
+    return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+end
+
+-- ============================================================
+-- 1. Mode (左側)
+-- ============================================================
+local ModeGroup = Tabs.PlayerTab:AddLeftGroupbox("Mode", "settings")
+
+local walkCfg = { enabled = false, speed = 1 }
+ModeGroup:AddToggle("WalkSpeedToggle", {
+    Text = "Walk Speed",
+    Default = false,
+    Callback = function(Value) walkCfg.enabled = Value end,
+})
+ModeGroup:AddSlider("WalkSpeedSlider", {
+    Text = "Walk Speed Value",
+    Default = 1, Min = 0.1, Max = 10, Rounding = 1,
+    Callback = function(Value) walkCfg.speed = Value end,
+})
+
+task.spawn(function()
+    while true do
+        task.wait()
+        if walkCfg.enabled then
+            pcall(function()
+                local char = getChar2()
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.MoveDirection.Magnitude > 0 then
+                    local md = hum.MoveDirection
+                    hrp.CFrame = hrp.CFrame + Vector3.new(md.X, 0, md.Z).Unit * walkCfg.speed
+                end
+            end)
+        end
+    end
+end)
+
+local jumpCfg = { enabled = false, power = 50 }
+ModeGroup:AddToggle("JumpPowerToggle", {
+    Text = "Jump Power",
+    Default = false,
+    Callback = function(Value)
+        jumpCfg.enabled = Value
+        if not Value then
+            pcall(function()
+                local hum = getChar2():FindFirstChildOfClass("Humanoid")
+                if hum then hum.JumpPower = 50 end
+            end)
+        end
+    end,
+})
+ModeGroup:AddSlider("JumpPowerSlider", {
+    Text = "Jump Power Value",
+    Default = 50, Min = 0, Max = 500, Rounding = 0,
+    Callback = function(Value)
+        jumpCfg.power = Value
+        if jumpCfg.enabled then
+            pcall(function()
+                local hum = getChar2():FindFirstChildOfClass("Humanoid")
+                if hum then hum.JumpPower = Value end
+            end)
+        end
+    end,
+})
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if jumpCfg.enabled then
+            pcall(function()
+                local hum = getChar2():FindFirstChildOfClass("Humanoid")
+                if hum and hum.JumpPower ~= jumpCfg.power then
+                    hum.JumpPower = jumpCfg.power
+                end
+            end)
+        end
+    end
+end)
+
+local infJumpEnabled = false
+ModeGroup:AddToggle("InfiniteJumpToggle", {
+    Text = "Infinite Jump",
+    Default = false,
+    Callback = function(Value) infJumpEnabled = Value end,
+})
+
+UserInputService.JumpRequest:Connect(function()
+    if not infJumpEnabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+end)
+
+-- ============================================================
+-- 2. Camera (右側 上) ← Modeの右隣
+-- ============================================================
+local CameraGroup = Tabs.PlayerTab:AddRightGroupbox("Camera", "camera")
+
+local Cam = Workspace.CurrentCamera
+
+CameraGroup:AddSlider("CamFOV", {
+    Text = "Field of View",
+    Default = 70, Min = 1, Max = 120, Rounding = 1, Suffix = "°",
+    Callback = function(Value)
+        if Cam then Cam.FieldOfView = Value end
+    end,
+})
+
+CameraGroup:AddToggle("CamThirdPerson", {
+    Text = "Third Person",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            LocalPlayer.CameraMaxZoomDistance = 1000
+            LocalPlayer.CameraMinZoomDistance = 0.5
+        else
+            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+            LocalPlayer.CameraMaxZoomDistance = 0.5
+            LocalPlayer.CameraMinZoomDistance = 0.5
+        end
+    end,
+})
+
+-- ============================================================
+-- 3. Teleporting (右側 中)
+-- ============================================================
+local Teleporting = Tabs.PlayerTab:AddRightGroupbox("Teleporting", "map-pin")
+
+local TeleportLocations = {}
+do
+    local waypoints = Workspace:FindFirstChild("Waypoints")
+    if waypoints then
+        for _, child in ipairs(waypoints:GetChildren()) do
+            if child.Name ~= "CharacterWaypoint" then
+                table.insert(TeleportLocations, child)
+            end
+        end
+    end
+    local spawnLoc = Workspace:FindFirstChild("SpawnLocation")
+    if spawnLoc then table.insert(TeleportLocations, spawnLoc) end
+end
+
+local selectedTeleportLoc = TeleportLocations[1]
+
+Teleporting:AddDropdown("TeleportToDropdown", {
+    Values = TeleportLocations,
+    Default = 1,
+    Multi = false,
+    Text = "Location",
+    Callback = function(teleportLocation)
+        selectedTeleportLoc = teleportLocation
+    end,
+})
+
+Teleporting:AddToggle("MakeSpawnLoc", {
+    Text = "Make Spawn Location",
+    Default = false,
+    Callback = function(arg)
+        if not arg then return end
+        local connection = LocalPlayer.CharacterAdded:Connect(function(character)
+            if not selectedTeleportLoc then return end
+            local hrp = character:WaitForChild("HumanoidRootPart", 0.5)
+            if hrp and selectedTeleportLoc then
+                hrp.CFrame = CFrame.new(selectedTeleportLoc.Position + Vector3.new(0, 5, 0))
+            end
+        end)
+        repeat
+            task.wait()
+        until not Toggles.MakeSpawnLoc.Value
+        connection:Disconnect()
+    end,
+})
+
+local loopTPToLocEnabled = false
+Teleporting:AddToggle("LoopTPToLoc", {
+    Text = "Loop TP to Location",
+    Default = false,
+    Callback = function(loopTpLocation)
+        loopTPToLocEnabled = loopTpLocation
+        if loopTpLocation then
+            task.spawn(function()
+                while loopTPToLocEnabled do
+                    task.wait()
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp and selectedTeleportLoc then
+                        hrp.CFrame = CFrame.new(selectedTeleportLoc.Position + Vector3.new(0, 10, 0))
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+-- ============================================================
+-- 4. Players (右側)
+-- ============================================================
+local PlayersGroup = Tabs.PlayerTab:AddRightGroupbox("Players", "users")
+
+local selectedTPPlayer = nil
+local TPPlayerDropdown = nil
+
+local function GetTPPlayerList()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(list, p.DisplayName .. " (" .. p.Name .. ")")
+        end
+    end
+    return list
+end
+
+local function GetNameFromDisplay(display)
+    if not display or display == "" then return nil end
+    local match = string.match(display, "%(([^)]+)%)")
+    return match
+end
+
+TPPlayerDropdown = PlayersGroup:AddDropdown("TeleportTargetsDropdown", {
+    Text = "Select Player",
+    Default = "",
+    Values = GetTPPlayerList(),
+    Callback = function(v)
+        local name = GetNameFromDisplay(v)
+        if name then
+            selectedTPPlayer = Players:FindFirstChild(name)
+        else
+            selectedTPPlayer = nil
+        end
+    end,
+})
+
+PlayersGroup:AddButton({
+    Text = "Update Player List",
+    Func = function()
+        if TPPlayerDropdown then
+            pcall(function() TPPlayerDropdown:SetValues(GetTPPlayerList()) end)
+        end
+    end,
+})
+
+local loopSpectateEnabled = false
+PlayersGroup:AddToggle("LoopSpectatePlayer", {
+    Text = "Spectate Player",
+    Default = false,
+    Callback = function(v)
+        loopSpectateEnabled = v
+        if v then
+            task.spawn(function()
+                while loopSpectateEnabled do
+                    task.wait()
+                    local myChar = LocalPlayer.Character
+                    local myHum = myChar and myChar:FindFirstChild("Humanoid")
+                    local tChar = selectedTPPlayer and selectedTPPlayer.Character
+                    local tHum = tChar and tChar:FindFirstChild("Humanoid")
+                    if tHum then
+                        Workspace.CurrentCamera.CameraSubject = tHum
+                    elseif myHum then
+                        Workspace.CurrentCamera.CameraSubject = myHum
+                    end
+                end
+                local myChar = LocalPlayer.Character
+                local myHum = myChar and myChar:FindFirstChild("Humanoid")
+                if myHum then Workspace.CurrentCamera.CameraSubject = myHum end
+            end)
+        end
+    end,
+})
+
+local loopTPToPlayerEnabled = false
+PlayersGroup:AddToggle("LoopTPToPlayer", {
+    Text = "Loop TP to Player",
+    Default = false,
+    Callback = function(v)
+        loopTPToPlayerEnabled = v
+        if v then
+            task.spawn(function()
+                while loopTPToPlayerEnabled do
+                    task.wait()
+                    local myChar = LocalPlayer.Character
+                    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                    local tChar = selectedTPPlayer and selectedTPPlayer.Character
+                    local tHRP = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                    if myHRP and tHRP then
+                        myHRP.CFrame = tHRP.CFrame * CFrame.new(0, 0, 2)
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+end) -- pcall end
+
+if not playerOK then
+    warn("[Clyrix] Player init error: " .. tostring(playerErr))
+end
+
+-- =====================================================
+-- Fun タブ: Poses / Animations
+-- =====================================================
+local funOK, funErr = pcall(function()
+
+local localPlayer = LocalPlayer
+local replicatedStorage = ReplicatedStorage
+
+-- ============================================================
+-- 1. Poses (おんぶ.txt ソース統合)
+-- ============================================================
+local function InitPosesTab()
+    local PosesPlayers = game:GetService("Players")
+    local PosesReplicatedStorage = game:GetService("ReplicatedStorage")
+    local PosesRunService = game:GetService("RunService")
+    local PosesWorkspace = game:GetService("Workspace")
+
+    local PosesLocalPlayer = PosesPlayers.LocalPlayer
+    local PosesGrabEvents = PosesReplicatedStorage:WaitForChild("GrabEvents")
+    local PosesSetNetworkOwner = PosesGrabEvents:WaitForChild("SetNetworkOwner")
+
+    local posesChar = PosesLocalPlayer.Character or PosesLocalPlayer.CharacterAdded:Wait()
+    local posesToysFolder = PosesWorkspace:FindFirstChild(PosesLocalPlayer.Name .. "SpawnedInToys")
+
+    PosesLocalPlayer.CharacterAdded:Connect(function(c)
+        posesChar = c
+        task.wait(0.25)
+        posesToysFolder = PosesWorkspace:WaitForChild(PosesLocalPlayer.Name .. "SpawnedInToys", 5)
+    end)
+
+    local function PosesSpawnToy(toyName, cframe)
+        task.spawn(function()
+            PosesReplicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(toyName, cframe, Vector3.zero)
+        end)
+    end
+
+    local function PosesDestroyT(toy)
+        PosesReplicatedStorage.MenuToys.DestroyToy:FireServer(toy or posesToysFolder:FindFirstChildWhichIsA("Model"))
+    end
+
+    local selectedPlayerForPoses = nil
+    local foodPlate = nil
+    local targetCharacter = nil
+    local loopActive = true
+    local useClone = false
+
+    local n13, n14, n15 = 0, 1.5, 0
+    local n16, n17, n18 = 0, 10, 0
+    local n19, n20, n21 = -1.5, 0, 0
+    local n22, n23, n24 = 1.5, 0, 0
+    local n25, n26, n27 = -0.5, -2, 0
+    local n28, n29, n30 = 0.5, -2, 0
+    local n31, n32, n33 = 0, 0, 0
+    local n34, n35, n36 = 0, 0, 0
+    local n37, n38, n39 = 0, 0, 0
+    local n40, n41, n42 = 0, 0, 0
+    local n43, n44, n45 = 0, 0, 0
+    local n46, n47, n48 = 0, 0, 0
+
+    local PosesSettingGroup = Tabs.FunTab:AddLeftGroupbox("Setting", "settings")
+    local PosesTargetGroup = Tabs.FunTab:AddRightGroupbox("Target", "target")
+
+    local poseSliders = {}
+
+    -- HEAD
+    PosesSettingGroup:AddDivider("Head")
+    poseSliders.HeadRotX    = PosesSettingGroup:AddSlider("SliderHeadRotX",    {Text = "Head Rot X",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n31 = v end})
+    poseSliders.HeadRotY    = PosesSettingGroup:AddSlider("SliderHeadRotY",    {Text = "Head Rot Y",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n32 = v end})
+    poseSliders.HeadRotZ    = PosesSettingGroup:AddSlider("SliderHeadRotZ",    {Text = "Head Rot Z",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n33 = v end})
+    poseSliders.HeadOffsetX = PosesSettingGroup:AddSlider("SliderHeadOffsetX", {Text = "Head Offset X", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n13 = v end})
+    poseSliders.HeadOffsetY = PosesSettingGroup:AddSlider("SliderHeadOffsetY", {Text = "Head Offset Y", Default = 1.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n14 = v end})
+    poseSliders.HeadOffsetZ = PosesSettingGroup:AddSlider("SliderHeadOffsetZ", {Text = "Head Offset Z", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n15 = v end})
+
+    -- TORSO
+    PosesSettingGroup:AddDivider("Torso")
+    poseSliders.TorsoRotX    = PosesSettingGroup:AddSlider("SliderTorsoRotX",    {Text = "Torso Rot X",    Default = 0,  Min = -180, Max = 180, Rounding = 0, Callback = function(v) n34 = v end})
+    poseSliders.TorsoRotY    = PosesSettingGroup:AddSlider("SliderTorsoRotY",    {Text = "Torso Rot Y",    Default = 0,  Min = -180, Max = 180, Rounding = 0, Callback = function(v) n35 = v end})
+    poseSliders.TorsoRotZ    = PosesSettingGroup:AddSlider("SliderTorsoRotZ",    {Text = "Torso Rot Z",    Default = 0,  Min = -180, Max = 180, Rounding = 0, Callback = function(v) n36 = v end})
+    poseSliders.TorsoOffsetX = PosesSettingGroup:AddSlider("SliderTorsoOffsetX", {Text = "Torso Offset X", Default = 0,  Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n16 = v end})
+    poseSliders.TorsoOffsetY = PosesSettingGroup:AddSlider("SliderTorsoOffsetY", {Text = "Torso Offset Y", Default = 10, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n17 = v end})
+    poseSliders.TorsoOffsetZ = PosesSettingGroup:AddSlider("SliderTorsoOffsetZ", {Text = "Torso Offset Z", Default = 0,  Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n18 = v end})
+
+    -- LEFT ARM
+    PosesSettingGroup:AddDivider("Left Arm")
+    poseSliders.LARotX    = PosesSettingGroup:AddSlider("SliderLARotX",    {Text = "Left Arm Rot X",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n37 = v end})
+    poseSliders.LARotY    = PosesSettingGroup:AddSlider("SliderLARotY",    {Text = "Left Arm Rot Y",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n38 = v end})
+    poseSliders.LARotZ    = PosesSettingGroup:AddSlider("SliderLARotZ",    {Text = "Left Arm Rot Z",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n39 = v end})
+    poseSliders.LAOffsetX = PosesSettingGroup:AddSlider("SliderLAOffsetX", {Text = "Left Arm Offset X", Default = -1.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n19 = v end})
+    poseSliders.LAOffsetY = PosesSettingGroup:AddSlider("SliderLAOffsetY", {Text = "Left Arm Offset Y", Default = 0,    Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n20 = v end})
+    poseSliders.LAOffsetZ = PosesSettingGroup:AddSlider("SliderLAOffsetZ", {Text = "Left Arm Offset Z", Default = 0,    Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n21 = v end})
+
+    -- RIGHT ARM
+    PosesSettingGroup:AddDivider("Right Arm")
+    poseSliders.RARotX    = PosesSettingGroup:AddSlider("SliderRARotX",    {Text = "Right Arm Rot X",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n40 = v end})
+    poseSliders.RARotY    = PosesSettingGroup:AddSlider("SliderRARotY",    {Text = "Right Arm Rot Y",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n41 = v end})
+    poseSliders.RARotZ    = PosesSettingGroup:AddSlider("SliderRARotZ",    {Text = "Right Arm Rot Z",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n42 = v end})
+    poseSliders.RAOffsetX = PosesSettingGroup:AddSlider("SliderRAOffsetX", {Text = "Right Arm Offset X", Default = 1.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n22 = v end})
+    poseSliders.RAOffsetY = PosesSettingGroup:AddSlider("SliderRAOffsetY", {Text = "Right Arm Offset Y", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n23 = v end})
+    poseSliders.RAOffsetZ = PosesSettingGroup:AddSlider("SliderRAOffsetZ", {Text = "Right Arm Offset Z", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n24 = v end})
+
+    -- LEFT LEG
+    PosesSettingGroup:AddDivider("Left Leg")
+    poseSliders.LLRotX    = PosesSettingGroup:AddSlider("SliderLLRotX",    {Text = "Left Leg Rot X",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n43 = v end})
+    poseSliders.LLRotY    = PosesSettingGroup:AddSlider("SliderLLRotY",    {Text = "Left Leg Rot Y",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n44 = v end})
+    poseSliders.LLRotZ    = PosesSettingGroup:AddSlider("SliderLLRotZ",    {Text = "Left Leg Rot Z",    Default = 0,    Min = -180, Max = 180, Rounding = 0, Callback = function(v) n45 = v end})
+    poseSliders.LLOffsetX = PosesSettingGroup:AddSlider("SliderLLOffsetX", {Text = "Left Leg Offset X", Default = -0.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n25 = v end})
+    poseSliders.LLOffsetY = PosesSettingGroup:AddSlider("SliderLLOffsetY", {Text = "Left Leg Offset Y", Default = -2,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n26 = v end})
+    poseSliders.LLOffsetZ = PosesSettingGroup:AddSlider("SliderLLOffsetZ", {Text = "Left Leg Offset Z", Default = 0,    Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n27 = v end})
+
+    -- RIGHT LEG
+    PosesSettingGroup:AddDivider("Right Leg")
+    poseSliders.RLRotX    = PosesSettingGroup:AddSlider("SliderRLRotX",    {Text = "Right Leg Rot X",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n46 = v end})
+    poseSliders.RLRotY    = PosesSettingGroup:AddSlider("SliderRLRotY",    {Text = "Right Leg Rot Y",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n47 = v end})
+    poseSliders.RLRotZ    = PosesSettingGroup:AddSlider("SliderRLRotZ",    {Text = "Right Leg Rot Z",    Default = 0,   Min = -180, Max = 180, Rounding = 0, Callback = function(v) n48 = v end})
+    poseSliders.RLOffsetX = PosesSettingGroup:AddSlider("SliderRLOffsetX", {Text = "Right Leg Offset X", Default = 0.5, Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n28 = v end})
+    poseSliders.RLOffsetY = PosesSettingGroup:AddSlider("SliderRLOffsetY", {Text = "Right Leg Offset Y", Default = -2,  Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n29 = v end})
+    poseSliders.RLOffsetZ = PosesSettingGroup:AddSlider("SliderRLOffsetZ", {Text = "Right Leg Offset Z", Default = 0,   Min = -10,  Max = 10,  Rounding = 1, Callback = function(v) n30 = v end})
+
+    local function PosesGetPlayerList()
+        local list = {}
+        for _, p in PosesPlayers:GetPlayers() do
+            if p ~= PosesLocalPlayer then
+                table.insert(list, p.DisplayName .. " [" .. p.Name .. "]")
+            end
+        end
+        return list
+    end
+
+    PosesTargetGroup:AddDropdown("SelectPosePlayer", {
+        Text = "Select Player",
+        Default = "",
+        Values = PosesGetPlayerList(),
+        Callback = function(option)
+            local val = option
+            if val and val ~= "" then
+                local match = tostring(val):match("%[(.-)%]")
+                if match then
+                    selectedPlayerForPoses = PosesPlayers:FindFirstChild(match)
+                end
+            else
+                selectedPlayerForPoses = nil
+            end
+        end,
+    })
+
+    PosesTargetGroup:AddDropdown("PosesPreset", {
+        Text = "Poses",
+        Default = "HeadSit",
+        Values = { "HeadSit", "Penis", "Blowjob" },
+        Callback = function(sel)
+            if sel == "HeadSit" then
+                poseSliders.HeadOffsetX:SetValue(0);   poseSliders.HeadOffsetY:SetValue(1.5); poseSliders.HeadOffsetZ:SetValue(-0.2)
+                poseSliders.TorsoOffsetX:SetValue(0);  poseSliders.TorsoOffsetY:SetValue(2);  poseSliders.TorsoOffsetZ:SetValue(0.75)
+                poseSliders.LAOffsetX:SetValue(-1);    poseSliders.LAOffsetY:SetValue(0.4);   poseSliders.LAOffsetZ:SetValue(-0.75)
+                poseSliders.RAOffsetX:SetValue(1);     poseSliders.RAOffsetY:SetValue(0.3);   poseSliders.RAOffsetZ:SetValue(-0.75)
+                poseSliders.LLOffsetX:SetValue(-0.8);  poseSliders.LLOffsetY:SetValue(-1.2);  poseSliders.LLOffsetZ:SetValue(-0.8)
+                poseSliders.RLOffsetX:SetValue(1);     poseSliders.RLOffsetY:SetValue(-1.2);  poseSliders.RLOffsetZ:SetValue(-0.85)
+                poseSliders.HeadRotX:SetValue(-17);    poseSliders.HeadRotY:SetValue(0);      poseSliders.HeadRotZ:SetValue(0)
+                poseSliders.TorsoRotX:SetValue(0);     poseSliders.TorsoRotY:SetValue(0);     poseSliders.TorsoRotZ:SetValue(0)
+                poseSliders.LARotX:SetValue(69);       poseSliders.LARotY:SetValue(-25);      poseSliders.LARotZ:SetValue(34)
+                poseSliders.RARotX:SetValue(45);       poseSliders.RARotY:SetValue(46);       poseSliders.RARotZ:SetValue(-23)
+                poseSliders.LLRotX:SetValue(-99);      poseSliders.LLRotY:SetValue(180);      poseSliders.LLRotZ:SetValue(157)
+                poseSliders.RLRotX:SetValue(-99);      poseSliders.RLRotY:SetValue(-180);     poseSliders.RLRotZ:SetValue(-153)
+            elseif sel == "Penis" then
+                poseSliders.TorsoOffsetX:SetValue(0);  poseSliders.TorsoOffsetY:SetValue(-0.8); poseSliders.TorsoOffsetZ:SetValue(-6.5)
+                poseSliders.TorsoRotX:SetValue(-90);   poseSliders.TorsoRotY:SetValue(0);      poseSliders.TorsoRotZ:SetValue(0)
+                poseSliders.HeadOffsetX:SetValue(0);   poseSliders.HeadOffsetY:SetValue(1.5);  poseSliders.HeadOffsetZ:SetValue(0)
+                poseSliders.HeadRotX:SetValue(90);     poseSliders.HeadRotY:SetValue(0);       poseSliders.HeadRotZ:SetValue(0)
+                poseSliders.LAOffsetX:SetValue(0);     poseSliders.LAOffsetY:SetValue(-2);     poseSliders.LAOffsetZ:SetValue(0)
+                poseSliders.RAOffsetX:SetValue(0);     poseSliders.RAOffsetY:SetValue(-4);     poseSliders.RAOffsetZ:SetValue(0)
+                poseSliders.LLOffsetX:SetValue(-1);    poseSliders.LLOffsetY:SetValue(-5.5);   poseSliders.LLOffsetZ:SetValue(0)
+                poseSliders.LLRotX:SetValue(0);        poseSliders.LLRotY:SetValue(0);         poseSliders.LLRotZ:SetValue(-90)
+                poseSliders.RLOffsetX:SetValue(1);     poseSliders.RLOffsetY:SetValue(-5.5);   poseSliders.RLOffsetZ:SetValue(0)
+                poseSliders.RLRotX:SetValue(0);        poseSliders.RLRotY:SetValue(0);         poseSliders.RLRotZ:SetValue(90)
+                poseSliders.LARotX:SetValue(0);        poseSliders.LARotY:SetValue(0);         poseSliders.LARotZ:SetValue(0)
+                poseSliders.RARotX:SetValue(0);        poseSliders.RARotY:SetValue(0);         poseSliders.RARotZ:SetValue(0)
+            elseif sel == "Blowjob" then
+                poseSliders.HeadRotX:SetValue(-1);     poseSliders.HeadRotY:SetValue(0);       poseSliders.HeadRotZ:SetValue(9)
+                poseSliders.TorsoRotX:SetValue(22);    poseSliders.TorsoRotY:SetValue(180);    poseSliders.TorsoRotZ:SetValue(0)
+                poseSliders.LARotX:SetValue(137);      poseSliders.LARotY:SetValue(-21);       poseSliders.LARotZ:SetValue(20)
+                poseSliders.RARotX:SetValue(137);      poseSliders.RARotY:SetValue(3);         poseSliders.RARotZ:SetValue(-20)
+                poseSliders.LLRotX:SetValue(-72);      poseSliders.LLRotY:SetValue(17);        poseSliders.LLRotZ:SetValue(-18)
+                poseSliders.RLRotX:SetValue(-69);      poseSliders.RLRotY:SetValue(-35);       poseSliders.RLRotZ:SetValue(20)
+                poseSliders.HeadOffsetX:SetValue(0);   poseSliders.HeadOffsetY:SetValue(1.5);  poseSliders.HeadOffsetZ:SetValue(0)
+                poseSliders.TorsoOffsetX:SetValue(0);  poseSliders.TorsoOffsetY:SetValue(-1.9); poseSliders.TorsoOffsetZ:SetValue(-2)
+                poseSliders.LAOffsetX:SetValue(-1.3);  poseSliders.LAOffsetY:SetValue(1.2);    poseSliders.LAOffsetZ:SetValue(-0.5)
+                poseSliders.RAOffsetX:SetValue(1.3);   poseSliders.RAOffsetY:SetValue(1.1);    poseSliders.RAOffsetZ:SetValue(-0.4)
+                poseSliders.LLOffsetX:SetValue(-0.8);  poseSliders.LLOffsetY:SetValue(-1.3);   poseSliders.LLOffsetZ:SetValue(0.8)
+                poseSliders.RLOffsetX:SetValue(0.8);   poseSliders.RLOffsetY:SetValue(-1.2);   poseSliders.RLOffsetZ:SetValue(0.8)
+            end
+        end,
+    })
+
+    PosesTargetGroup:AddToggle("CloneOption", {
+        Text = "Use Clone",
+        Default = false,
+        Callback = function(arg)
+            useClone = arg
+        end,
+    })
+
+    PosesTargetGroup:AddDivider("Apply")
+
+    PosesTargetGroup:AddToggle("LoopPosePlayer", {
+        Text = "Apply Pose",
+        Default = false,
+        Callback = function(arg)
+            if arg then
+                loopActive = true
+                task.spawn(function()
+                    while loopActive and PosesRunService.RenderStepped:Wait() do
+                        local humanoidRootPart = posesChar and posesChar:FindFirstChild("HumanoidRootPart")
+                        local humanoid = posesChar and posesChar:FindFirstChild("Humanoid")
+
+                        if not useClone then
+                            local PlayerForPosing = selectedPlayerForPoses
+                            if PlayerForPosing then
+                                targetCharacter = PlayerForPosing.Character
+                            end
+                        elseif posesToysFolder and posesToysFolder:FindFirstChild("YouDecoy") and useClone then
+                            targetCharacter = posesToysFolder:FindFirstChild("YouDecoy")
+                        else
+                            Library:Notify({Title = "Nil'e", Description = "Spawn Clone", Time = 5})
+                            if Toggles.LoopPosePlayer then Toggles.LoopPosePlayer:SetValue(false) end
+                            return
+                        end
+
+                        if targetCharacter and humanoidRootPart and humanoid and humanoid.Health > 0 and loopActive then
+                            if not posesToysFolder:FindFirstChild("RagdollForPoses") then
+                                for _, v27 in posesToysFolder:GetChildren() do
+                                    if v27.Name == "FoodPlate" then
+                                        v27.Name = "idi nahui otsyuda"
+                                        PosesDestroyT(v27)
+                                    end
+                                end
+
+                                while true do
+                                    PosesRunService.RenderStepped:Wait()
+                                    if not (PosesLocalPlayer.CanSpawnToy.Value and not PosesLocalPlayer.InPlot.Value) then
+                                        continue
+                                    end
+                                    break
+                                end
+
+                                PosesSpawnToy("FoodPlate", humanoidRootPart.CFrame * CFrame.new(0, 10, 20))
+                                foodPlate = posesToysFolder:WaitForChild("FoodPlate", 1)
+
+                                if foodPlate then
+                                    local soundPart = foodPlate:WaitForChild("SoundPart", 1)
+                                    if soundPart then
+                                        while true do
+                                            PosesRunService.RenderStepped:Wait()
+                                            PosesSetNetworkOwner:FireServer(soundPart, soundPart.CFrame)
+                                            local flag9 = not foodPlate or not soundPart
+                                            local partOwner
+                                            if flag9 then
+                                                partOwner = flag9
+                                            else
+                                                partOwner = soundPart:FindFirstChild("PartOwner")
+                                                if partOwner then
+                                                    partOwner = soundPart:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                                end
+                                            end
+                                            if not (partOwner or not humanoidRootPart or not humanoid or humanoid.Health <= 0 or not loopActive) then
+                                                continue
+                                            end
+                                            break
+                                        end
+
+                                        local v27 = foodPlate
+                                        local partOwner
+                                        if foodPlate then partOwner = soundPart else partOwner = v27 end
+                                        partOwner = partOwner and soundPart:FindFirstChild("PartOwner")
+                                        if partOwner then
+                                            partOwner = soundPart:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                        end
+
+                                        if partOwner then
+                                            soundPart.CanCollide = false
+                                            soundPart.CanQuery = false
+                                            soundPart.Transparency = 1
+                                            soundPart.CFrame = CFrame.new(0, 670000, 0)
+                                            local bodyPosition = Instance.new("BodyPosition", soundPart)
+                                            bodyPosition.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                                            bodyPosition.D = 100
+                                            bodyPosition.Position = Vector3.new(0, 670000, 0)
+                                            foodPlate.Name = "RagdollForPoses"
+                                        end
+                                    end
+                                end
+                            else
+                                local partOwner = posesToysFolder:FindFirstChild("RagdollForPoses") and
+                                    posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart") and
+                                    posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart"):FindFirstChild("PartOwner")
+                                if partOwner then
+                                    partOwner = posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart")
+                                        :FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                end
+
+                                if partOwner then
+                                    local humanoidRootPart2 = targetCharacter:FindFirstChild("HumanoidRootPart")
+                                    local humanoid2 = targetCharacter:FindFirstChild("Humanoid")
+                                    local head = targetCharacter:FindFirstChild("Head")
+
+                                    if humanoidRootPart2 and humanoid2 and humanoid2.Health > 0 and head and loopActive then
+                                        local cFrame = humanoidRootPart.CFrame
+
+                                        if (humanoidRootPart.Position - humanoidRootPart2.Position).Magnitude > 25 and loopActive then
+                                            while true do
+                                                humanoidRootPart.CFrame = humanoidRootPart2.CFrame * CFrame.new(0, 0, 1.5)
+                                                humanoidRootPart.Velocity = Vector3.zero
+                                                humanoidRootPart.RotVelocity = Vector3.zero
+                                                PosesRunService.RenderStepped:Wait()
+                                                PosesSetNetworkOwner:FireServer(humanoidRootPart2, humanoidRootPart2.CFrame)
+                                                local flag9 = not targetCharacter or not humanoidRootPart2 or not humanoid2 or humanoid2.Health <= 0 or not head
+                                                if not flag9 then
+                                                    flag9 = head:FindFirstChild("PartOwner")
+                                                    if flag9 then
+                                                        flag9 = head:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                                    end
+                                                end
+                                                if not (flag9 or not humanoidRootPart or not humanoid or humanoid.Health <= 0 or not loopActive) then
+                                                    continue
+                                                end
+                                                break
+                                            end
+
+                                            if humanoidRootPart then
+                                                humanoidRootPart.CFrame = cFrame
+                                                humanoidRootPart.Velocity = Vector3.zero
+                                                humanoidRootPart.RotVelocity = Vector3.zero
+                                            end
+                                            if loopActive and humanoidRootPart2 then
+                                                humanoidRootPart2.CFrame = cFrame * CFrame.new(0, 0, -5)
+                                                humanoidRootPart2.Velocity = Vector3.zero
+                                                humanoidRootPart2.RotVelocity = Vector3.zero
+                                            end
+                                        end
+
+                                        if loopActive and humanoidRootPart and humanoid and humanoid.Health > 0 and humanoidRootPart2 and humanoid2 and humanoid2.Health > 0 then
+                                            local partOwner2 = loopActive and head and head:FindFirstChild("PartOwner")
+                                            if partOwner2 then
+                                                partOwner2 = head:FindFirstChild("PartOwner").Value == PosesLocalPlayer.Name
+                                            end
+
+                                            if partOwner2 then
+                                                task.spawn(function()
+                                                    pcall(function()
+                                                        if humanoid2:FindFirstChild("Ragdolled") and not humanoid2:FindFirstChild("Ragdolled").Value then
+                                                            task.wait(0.05)
+                                                            posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart").CFrame =
+                                                                targetCharacter:FindFirstChild("Torso").CFrame * CFrame.new(0, 0.5, 0) *
+                                                                CFrame.Angles(1.5707963267948966, 0, 0)
+                                                            task.wait(0.1)
+                                                            posesToysFolder:FindFirstChild("RagdollForPoses"):FindFirstChild("SoundPart").CFrame =
+                                                                CFrame.new(0, 670000, 0)
+                                                        end
+                                                    end)
+                                                    pcall(function()
+                                                        humanoidRootPart2.CanCollide = false
+                                                        head.CanCollide = false
+                                                        targetCharacter:FindFirstChild("Torso").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Left Arm"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Right Arm"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Left Leg"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                        targetCharacter:FindFirstChild("Right Leg"):FindFirstChild("RagdollLimbPart").CanCollide = false
+                                                    end)
+                                                end)
+
+                                                pcall(function()
+                                                    targetCharacter:FindFirstChild("Torso").CFrame = humanoidRootPart.CFrame *
+                                                        CFrame.new(n16, n17, n18) * CFrame.Angles(math.rad(n34), math.rad(n35), math.rad(n36))
+                                                    head.CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n13, n14, n15) * CFrame.Angles(math.rad(n31), math.rad(n32), math.rad(n33))
+                                                    targetCharacter:FindFirstChild("Left Arm").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n19, n20, n21) * CFrame.Angles(math.rad(n37), math.rad(n38), math.rad(n39))
+                                                    targetCharacter:FindFirstChild("Right Arm").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n22, n23, n24) * CFrame.Angles(math.rad(n40), math.rad(n41), math.rad(n42))
+                                                    targetCharacter:FindFirstChild("Left Leg").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n25, n26, n27) * CFrame.Angles(math.rad(n43), math.rad(n44), math.rad(n45))
+                                                    targetCharacter:FindFirstChild("Right Leg").CFrame = targetCharacter:FindFirstChild("Torso").CFrame *
+                                                        CFrame.new(n28, n29, n30) * CFrame.Angles(math.rad(n46), math.rad(n47), math.rad(n48))
+                                                end)
+
+                                                pcall(function()
+                                                    humanoidRootPart2.Velocity = Vector3.zero
+                                                    targetCharacter["Left Arm"].Velocity = Vector3.zero
+                                                    targetCharacter["Right Arm"].Velocity = Vector3.zero
+                                                    targetCharacter["Left Leg"].Velocity = Vector3.zero
+                                                    targetCharacter["Right Leg"].Velocity = Vector3.zero
+                                                end)
+                                            else
+                                                PosesSetNetworkOwner:FireServer(humanoidRootPart2, humanoidRootPart2.CFrame)
+                                            end
+                                        end
+                                    end
+                                else
+                                    PosesDestroyT(posesToysFolder:FindFirstChild("RagdollForPoses"))
+                                end
+                            end
+                        end
+                    end
+                end)
+            else
+                loopActive = false
+
+                if not useClone then
+                    local PlayerForPosing = selectedPlayerForPoses
+                    if PlayerForPosing then
+                        targetCharacter = PlayerForPosing.Character
+                    end
+                elseif posesToysFolder and posesToysFolder:FindFirstChild("YouDecoy") and useClone then
+                    targetCharacter = posesToysFolder:FindFirstChild("YouDecoy")
+                end
+
+                if targetCharacter then
+                    task.wait(0.1)
+                    pcall(function()
+                        PosesGrabEvents.DestroyGrabLine:FireServer(targetCharacter:FindFirstChild("HumanoidRootPart"))
+                        targetCharacter:FindFirstChild("HumanoidRootPart").CanCollide = true
+                    end)
+                end
+            end
+        end,
+    })
+
+    task.spawn(function()
+        while task.wait(3) do
+            if Options.SelectPosePlayer then
+                pcall(function() Options.SelectPosePlayer:SetValues(PosesGetPlayerList()) end)
+            end
+        end
+    end)
+end
+InitPosesTab()
+
+-- ============================================================
+-- 2. Animations (右側)
+-- ============================================================
+local Animations = Tabs.FunTab:AddRightGroupbox("Animations", "audio-lines")
+
+local tbl16 = {
+    Struggle = "rbxassetid://7047322890", Faint = "rbxassetid://181526230",
+    ["Floor Faint"] = "rbxassetid://181525546", Levitate = "rbxassetid://313762630",
+    Spinner = "rbxassetid://188632011", ["Spin Dance"] = "rbxassetid://429730430",
+    ["Spin Dance 2"] = "rbxassetid://186934910", ["Float Sit"] = "rbxassetid://179224234",
+    Scared = "rbxassetid://180612465", ["Floating Head"] = "rbxassetid://121572214",
+    Crouch = "rbxassetid://182724289", ["Moving Dance"] = "rbxassetid://429703734",
+    ["Bow Down"] = "rbxassetid://204292303", ["Sword Slam"] = "rbxassetid://204295235",
+    Insane = "rbxassetid://33796059", ["Mega Insane"] = "rbxassetid://184574340",
+    ["Sword Slice"] = "rbxassetid://35978879", ["Loop Head"] = "rbxassetid://35154961",
+    ["Floor Crawl"] = "rbxassetid://282574440", ["Dino Walk"] = "rbxassetid://204328711",
+    ["Weird Back"] = "rbxassetid://215384594", ["Moon Dance"] = "rbxassetid://45834924",
+    ["Full Punch"] = "rbxassetid://204062532", ["Full Swing"] = "rbxassetid://218504594",
+    ["Arm Turbine"] = "rbxassetid://259438880", ["Barrel Roll"] = "rbxassetid://136801964",
+    ["Arm Detach"] = "rbxassetid://33169583", ["Insane Arms"] = "rbxassetid://27432691",
+}
+
+local tbl17 = {}
+for k, v22 in pairs(tbl16) do table.insert(tbl17, k) end
+table.sort(tbl17)
+
+local AnimationToPlay = Animations:AddDropdown("AnimationToPlay", {
+    Values = tbl17,
+    Default = 1,
+    Multi = false,
+    Searchable = true,
+    Text = "Animation to Play",
+})
+
+local AnimS = Animations:AddSlider("AnimS", { Text = "Animation Speed", Default = 1, Min = 0, Max = 100 })
+
+local currentAnimTrack = nil
+local currentAnimName = "Struggle"
+
+local function stopCurrentAnim()
+    if currentAnimTrack then
+        currentAnimTrack:Stop()
+        currentAnimTrack:Destroy()
+        currentAnimTrack = nil
+    end
+end
+
+local function playAnim(name)
+    stopCurrentAnim()
+    if not (Toggles.AnimationToggle and Toggles.AnimationToggle.Value) then return end
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if not animator then return end
+    local id = tbl16[name]
+    if not id then return end
+    local animation = Instance.new("Animation")
+    animation.AnimationId = id
+    currentAnimTrack = animator:LoadAnimation(animation)
+    currentAnimTrack.Looped = true
+    currentAnimTrack:Play()
+    currentAnimTrack:AdjustSpeed(AnimS.Value)
+    currentAnimName = name
+end
+
+Animations:AddToggle("AnimationToggle", {
+    Text = "Toggle Animation",
+    Default = false,
+    Callback = function(arg)
+        if not arg then
+            stopCurrentAnim()
+        else
+            playAnim(currentAnimName)
+        end
+    end,
+})
+
+AnimS:OnChanged(function()
+    if currentAnimTrack then currentAnimTrack:AdjustSpeed(AnimS.Value) end
+end)
+
+AnimationToPlay:OnChanged(function(arg)
+    currentAnimName = arg
+    if Toggles.AnimationToggle and Toggles.AnimationToggle.Value then
+        playAnim(AnimationToPlay.Value)
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if Toggles.AnimationToggle and Toggles.AnimationToggle.Value then
+        stopCurrentAnim()
+        playAnim(AnimationToPlay.Value)
+    end
+end)
+
+end) -- pcall end
+
+if not funOK then
+    warn("[Clyrix] Fun init error: " .. tostring(funErr))
 end
