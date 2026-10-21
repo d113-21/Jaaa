@@ -3199,8 +3199,8 @@ do
         if not tbl19.AutoAntiLag or os.clock() - n9 < 2.5 or deltaTime <= 0 then return end
         n9 = os.clock()
         local antiLagSens = tbl18.AntiLagSens
-        if math.floor(1 / deltaTime) < antiLagSens and toggles.AntiLag and not toggles.AntiLag.Value then
-            toggles.AntiLag:SetValue(true)
+        if math.floor(1 / deltaTime) < antiLagSens and Toggles.AntiLag and not Toggles.AntiLag.Value then
+            Toggles.AntiLag:SetValue(true)
         end
     end)
 
