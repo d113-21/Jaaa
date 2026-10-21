@@ -1,0 +1,58 @@
+local repo = 'https://raw.githubusercontent.com/deividcomsono/Obsidian/main/'
+local LibrarySource = game:HttpGet(repo .. 'Library.lua')
+local Library = loadstring(LibrarySource)()
+local Toggles = Library.Toggles
+local Options = Library.Options
+Library.Scheme.AccentColor = Color3.fromRGB(255, 255, 255)
+Library.Scheme.OutlineColor = Color3.fromRGB(128, 128, 128)
+
+local Players = game:GetService('Players')
+local RunService = game:GetService('RunService')
+local Workspace = game:GetService('Workspace')
+local SoundService = game:GetService('SoundService')
+local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local Lighting = game:GetService('Lighting')
+local TweenService = game:GetService('TweenService')
+local InsertService = game:GetService('InsertService')
+local LocalPlayer = Players.LocalPlayer
+
+local OLD_NOTIFY = Library.Notify
+
+function Library:Notify(data)
+    if type(data) ~= 'table' then
+        data = { Description = tostring(data) }
+    end
+    data.Title = data.Title or '<b>Clyrix v1.10.21</b>'
+    data.BigIcon = data.BigIcon or 'rbxassetid://94028363129362'
+    return OLD_NOTIFY(self, data)
+end
+
+local Window = Library:CreateWindow({
+    Title = '<b>Clyrix v1.10.21</b>',
+    Icon = '94028363129362',
+    Footer = 'Clyrix made by tmmutekitou',
+    DisableSearch = false,
+    EnableCompacting = true,
+    SidebarCompacted = true,
+    EnableSidebarResize = true,
+    CornerRadius = 30,
+    BackgroundImage = 'rbxassetid://118641183',
+})
+
+local Tabs = {
+    MainTab = Window:AddTab('Main', 'home', 'Main menu'),
+    GrabTab = Window:AddTab('Grab', 'hand', 'grab mode'),
+    AntiTab = Window:AddTab('Anti', 'shield', 'Anti menu'),
+    TargetTab = Window:AddTab('Target', 'crosshair', 'hvh menu'),
+    BlobmanTab = Window:AddTab('Blobman', 'bot', 'Blobman hvh'),
+    ServerTab = Window:AddTab('Server', 'server', 'Server Tab'),
+    VisualsTab = Window:AddTab('Visual', 'eye', 'Visual Tab'),
+    PlayerTab = Window:AddTab('Player Tab', 'user', 'player'),
+    DevTab = Window:AddTab('Dev', 'user-check', 'Dev Tab'),
+}
+
+Library:Notify({
+    Title = '<b>Crix Notify</b>',
+    Description = 'Clyrix online',
+    Time = 4,
+})
