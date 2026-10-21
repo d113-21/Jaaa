@@ -7843,3 +7843,86 @@ end) -- pcall end
 if not funOK then
     warn("[Clyrix] Fun init error: " .. tostring(funErr))
 end
+
+-- =====================================================
+-- Dev タブ: Developer Info
+-- =====================================================
+local devOK, devErr = pcall(function()
+
+local DevGroup = Tabs.DevTab:AddLeftGroupbox("Developer", "user")
+
+-- 画像を入れるためのダミーラベル
+local Placeholder = DevGroup:AddLabel("Loading avatar...")
+
+-- RobloxのAPIを使ってユーザーIDを取得し、画像を貼る
+task.spawn(function()
+    local success, userId = pcall(function()
+        return Players:GetUserIdFromNameAsync("tmmutekitou2")
+    end)
+
+    if success and userId then
+        -- プレースホルダーを消す
+        if Placeholder and Placeholder.Destroy then
+            Placeholder:Destroy()
+        end
+
+        -- アバター画像のURL（バストアップ）
+        local imageUrl = string.format("rbxthumb://type=AvatarBust&id=%d&w=420&h=420", userId)
+
+        -- 画像を追加
+        DevGroup:AddImage("DevAvatarImage", {
+            Image = imageUrl,
+            Height = 250,
+            ScaleType = Enum.ScaleType.Fit,
+            BackgroundTransparency = 1,
+        })
+    else
+        if Placeholder and Placeholder.SetText then
+            Placeholder:SetText("Failed to load avatar.")
+        end
+    end
+end)
+
+DevGroup:AddDivider()
+
+DevGroup:AddLabel("Name: <b>@tmmutekitou2</b>", true)
+DevGroup:AddLabel("Role: <b>Developer</b>", true)
+DevGroup:AddLabel("Project: <b>Clyrix</b>", true)
+
+end) -- pcall end
+
+if not devOK then
+    warn("[Clyrix] Dev init error: " .. tostring(devErr))
+end
+
+-- ============================================================
+-- Support Discord (右側)
+-- ============================================================
+local SupportGroup = Tabs.DevTab:AddRightGroupbox("Support Discord", "message-circle")
+
+SupportGroup:AddLabel("Join our Discord for support,\nupdates and announcements.", true)
+
+SupportGroup:AddDivider()
+
+SupportGroup:AddButton({
+    Text = "Copy Link",
+    Func = function()
+        local link = "https://discord.gg/JU5TcqNQGD"
+        local ok = pcall(function()
+            setclipboard(link)
+        end)
+        if ok then
+            Library:Notify({
+                Title = "Discord",
+                Description = "Link copied to clipboard!\n" .. link,
+                Time = 4,
+            })
+        else
+            Library:Notify({
+                Title = "Discord",
+                Description = "Failed to copy. Link:\n" .. link,
+                Time = 3,
+            })
+        end
+    end,
+})
