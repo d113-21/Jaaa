@@ -23,7 +23,7 @@ function Library:Notify(data)
         data = { Description = tostring(data) }
     end
     data.Title = data.Title or '<b>Clyrix v1.10.21</b>'
-    data.BigIcon = data.BigIcon or 'rbxassetid://94028363129362'
+    data.BigIcon = data.BigIcon or 'rbxassetid://'
     return OLD_NOTIFY(self, data)
 end
 
@@ -49,10 +49,11 @@ local Tabs = {
     VisualsTab = Window:AddTab('Visual', 'eye', 'Visual Tab'),
     PlayerTab = Window:AddTab('Player Tab', 'user', 'player'),
     DevTab = Window:AddTab('Dev', 'user-check', 'Dev Tab'),
+    UISettings = Window:AddTab('UI Settings', 'settings', 'UI setting mode'),
 }
 
 Library:Notify({
     Title = '<b>Crix Notify</b>',
     Description = 'Clyrix online',
-    Time = 4,
+    Time = 3,
 })
