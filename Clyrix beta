@@ -299,8 +299,199 @@ do
             task.wait(1)
             render()
         end)
-        while task.wait(0.01) do
+        while task.wait(1) do
             if not dragging then render() end
         end
+    end)
+end
+-- =====================================================
+-- Player Information（Main タブ右側）
+-- =====================================================
+do
+    local InfoGroup = Tabs.MainTab:AddRightGroupbox("Player Information", "info")
+    local DisplayNameLabel = InfoGroup:AddLabel("Display Name: -")
+    local PlayerIdLabel    = InfoGroup:AddLabel("Player ID: -")
+    local PlayTimeLabel    = InfoGroup:AddLabel("Play Time: -")
+    local PositionLabel    = InfoGroup:AddLabel("Position: -")
+    local BlockLabel       = InfoGroup:AddLabel("Under Block: -")
+
+    local function setLabel(label, text)
+        if not label then return end
+        if typeof(label) == "table" and label.SetText then
+            pcall(function() label:SetText(text) end)
+        elseif typeof(label) == "Instance" and label:IsA("TextLabel") then
+            label.Text = text
+        end
+    end
+
+    local startTime = tick()
+
+    local function formatTime(seconds)
+        seconds = math.floor(seconds)
+        local h = math.floor(seconds / 3600)
+        local m = math.floor((seconds % 3600) / 60)
+        local s = seconds % 60
+        return string.format("%02d:%02d:%02d", h, m, s)
+    end
+
+    local function getBlockUnderFeet()
+        local char = LocalPlayer.Character
+        if not char then return "-" end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return "-" end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { char }
+        local result = Workspace:Raycast(hrp.Position, Vector3.new(0, -1, 0) * 500, params)
+        if result and result.Instance then
+            return result.Instance.Name
+        end
+        return "-"
+    end
+
+    task.spawn(function()
+        while task.wait(0.2) do
+            pcall(function()
+                setLabel(DisplayNameLabel, "Display Name: " .. tostring(LocalPlayer.DisplayName))
+                setLabel(PlayerIdLabel, "Player ID: @" .. tostring(LocalPlayer.Name))
+                setLabel(PlayTimeLabel, "Play Time: " .. formatTime(tick() - startTime))
+
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local p = hrp.Position
+                    setLabel(PositionLabel, string.format("Position: X=%.1f, Y=%.1f, Z=%.1f", p.X, p.Y, p.Z))
+                else
+                    setLabel(PositionLabel, "Position: -")
+                end
+
+                setLabel(BlockLabel, "Under Block: " .. getBlockUnderFeet())
+            end)
+        end
+    end)
+end
+
+-- =====================================================
+-- Player List（Main タブ右側・Player Information の下）
+-- =====================================================
+do
+    local FontColor = Library.Scheme.FontColor
+    local MainColor = Library.Scheme.MainColor
+    local BgColor = Library.Scheme.BackgroundColor
+    local OutlineColor = Library.Scheme.OutlineColor
+
+    local ListGroup = Tabs.MainTab:AddRightGroupbox("Player List", "users")
+
+    -- Player List を挿入するためのダミーラベル（Groupbox のリサイズを維持）
+    local anchor = ListGroup:AddLabel("")
+    anchor.Holder.Visible = false
+    anchor.Holder.Size = UDim2.new(1, 0, 0, 0)
+
+    local listScroll = Instance.new("ScrollingFrame")
+    listScroll.Name = "PlayerListScroll"
+    listScroll.Size = UDim2.new(1, 0, 0, 200)
+    listScroll.BackgroundTransparency = 1
+    listScroll.BorderSizePixel = 0
+    listScroll.ScrollBarThickness = 2
+    listScroll.ScrollBarImageColor3 = OutlineColor
+    listScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    listScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    listScroll.Parent = ListGroup.Container
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.Parent = listScroll
+
+    local function buildRow(player)
+        local row = Instance.new("Frame")
+        row.Name = player.Name
+        row.Size = UDim2.new(1, 0, 0, 40)
+        row.BackgroundColor3 = MainColor
+        row.BackgroundTransparency = 0.3
+        row.BorderSizePixel = 0
+        row.Parent = listScroll
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 6)
+        corner.Parent = row
+
+        local avatar = Instance.new("ImageLabel")
+        avatar.Size = UDim2.fromOffset(32, 32)
+        avatar.Position = UDim2.new(0, 4, 0.5, -16)
+        avatar.BackgroundColor3 = BgColor
+        avatar.BorderSizePixel = 0
+        avatar.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48", player.UserId)
+        avatar.Parent = row
+
+        local ac = Instance.new("UICorner")
+        ac.CornerRadius = UDim.new(1, 0)
+        ac.Parent = avatar
+
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Size = UDim2.new(1, -50, 0, 18)
+        nameLabel.Position = UDim2.new(0, 42, 0, 4)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = player.DisplayName
+        nameLabel.TextColor3 = FontColor
+        nameLabel.TextSize = 14
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.Parent = row
+
+        local userLabel = Instance.new("TextLabel")
+        userLabel.Size = UDim2.new(1, -50, 0, 14)
+        userLabel.Position = UDim2.new(0, 42, 0, 22)
+        userLabel.BackgroundTransparency = 1
+        userLabel.Text = "@" .. player.Name
+        userLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+        userLabel.TextSize = 12
+        userLabel.TextXAlignment = Enum.TextXAlignment.Left
+        userLabel.Font = Enum.Font.Gotham
+        userLabel.Parent = row
+
+        return row
+    end
+
+    local function refreshList()
+        for _, child in ipairs(listScroll:GetChildren()) do
+            if child:IsA("Frame") then
+                child:Destroy()
+            end
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            buildRow(player)
+        end
+    end
+
+    refreshList()
+
+    Players.PlayerAdded:Connect(function(player)
+        task.wait(0.2)
+        refreshList()
+    end)
+
+    Players.PlayerRemoving:Connect(function(player)
+        local row = listScroll:FindFirstChild(player.Name)
+        if row then row:Destroy() end
+    end)
+end
+
+-- =====================================================
+-- Clyrix | FPS | Ping ウォーターマーク
+-- =====================================================
+do
+    local Stats = game:GetService("Stats")
+    local RunService = game:GetService("RunService")
+
+    local Watermark = Library:AddDraggableLabel("Clyrix | 0 FPS | 0 ms", "94028363129362")
+
+    local acc = 0
+    RunService.Heartbeat:Connect(function(dt)
+        acc += dt
+        if acc < 0.5 then return end
+        acc = 0
+        local fps = math.floor(Stats.Workspace.Heartbeat:GetValue())
+        local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+        Watermark:SetText(("Clyrix | %d FPS | %d ms"):format(fps, ping))
     end)
 end
