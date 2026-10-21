@@ -48,8 +48,9 @@ local Tabs = {
     ServerTab = Window:AddTab('Server', 'server', 'Server Tab'),
     VisualsTab = Window:AddTab('Visual', 'eye', 'Visual Tab'),
     PlayerTab = Window:AddTab('Player Tab', 'user', 'player'),
+    FunTab = Window:AddTab('Fun', 'gamepad-2', 'Funs'),
     DevTab = Window:AddTab('Dev', 'user-check', 'Dev Tab'),
-    UISettings = Window:AddTab('UI Settings', 'settings', 'UI setting mode'),
+    Settings = Window:AddTab('Settings', 'settings', 'setting mode'),
 }
 
 Library:Notify({
@@ -5609,4 +5610,537 @@ end) -- pcall end
 
 if not blobmanOK then
     warn("[Clyrix] Blobman init error: " .. tostring(blobmanErr))
+end
+-- =====================================================
+-- Server タブ: HOUSE / No Blob / Blobman / Crash
+-- =====================================================
+local serverOK, serverErr = pcall(function()
+
+local localPlayer = LocalPlayer
+local replicatedStorage = ReplicatedStorage
+
+local function ClyrixNotify(title, desc, time)
+    Library:Notify({ Title = title, Description = desc, Time = time or 5 })
+end
+
+-- Whitelistの安全対策
+_G.ClyrixWhitelist = _G.ClyrixWhitelist or {}
+
+-- ============================================================
+-- 1. HOUSE (Plot Breaker)
+-- ============================================================
+local HouseGroup = Tabs.ServerTab:AddLeftGroupbox("HOUSE")
+
+local function runPlotBreaker()
+    local inv = Workspace:FindFirstChild(LocalPlayer.Name.."SpawnedInToys")
+    if not inv then return end
+    local currentHRP
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        currentHRP = LocalPlayer.Character.HumanoidRootPart
+    else
+        local character = LocalPlayer.CharacterAdded:Wait()
+        currentHRP = character:WaitForChild("HumanoidRootPart")
+    end
+    if not currentHRP then return end
+    task.spawn(function()
+        for i = 1, 5 do
+            local shur = nil
+            local conn = inv.ChildAdded:Connect(function(child)
+                if child.Name == "NinjaShuriken" then
+                    shur = child
+                    conn:Disconnect()
+                end
+            end)
+            pcall(function()
+                replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("NinjaShuriken", currentHRP.CFrame * CFrame.new(5, 8, 20), Vector3.new(0, 0, 0))
+            end)
+            local startTime = tick()
+            repeat
+                if shur and shur:FindFirstChild("StickyPart") and shur:FindFirstChild("SoundPart") then break end
+                task.wait(0.01)
+            until tick() - startTime > 0.5
+            shur = shur or inv:FindFirstChild("NinjaShuriken")
+            if shur then
+                local soundPart = shur:FindFirstChild("SoundPart")
+                local stickyPart = shur:FindFirstChild("StickyPart")
+                if soundPart and stickyPart then
+                    local setOwner = replicatedStorage:WaitForChild("GrabEvents"):WaitForChild("SetNetworkOwner")
+                    for _ = 1, 15 do
+                        pcall(function() setOwner:FireServer(soundPart, soundPart.CFrame) end)
+                        if soundPart:FindFirstChild("PartOwner") and soundPart.PartOwner.Value == LocalPlayer.Name then break end
+                    end
+                    for _, obj in pairs(shur:GetChildren()) do
+                        if obj:IsA("BasePart") then
+                            obj.CanTouch = false
+                            obj.CanCollide = false
+                            obj.Transparency = 1
+                        end
+                    end
+                    shur.Name = "Noclipped"
+                    local plot = Workspace.Plots:FindFirstChild("Plot" .. i)
+                    if plot then
+                        local plotArea = plot:FindFirstChild("PlotArea")
+                        if plotArea then
+                            pcall(function()
+                                replicatedStorage.PlayerEvents.StickyPartEvent:FireServer(stickyPart, plotArea, CFrame.new(1e12, 1e12, 1e12))
+                            end)
+                        end
+                    end
+                end
+            end
+            task.wait(0.1)
+        end
+    end)
+end
+
+HouseGroup:AddButton({
+    Text = "Break All Plots (1-5)",
+    Func = function() runPlotBreaker() end
+})
+
+-- ============================================================
+-- 2. No Blob Settings (Left)
+-- ============================================================
+local NoBlobSettingsGroup = Tabs.ServerTab:AddLeftGroupbox("No Blob Settings")
+
+local DestroyLineCount = 39
+local DestroySelectedHeight = "Spawn"
+local DestroyCustomHeight = 35
+local DestroyHeavenHeight = 1e9
+local DestroyLineLagEnabled = false
+local DestroyOwnerSpamCount = 2
+local DestroyOwnerSpamInterval = 0.01
+local DestroyRadius = 85
+local DestroyGrabEvents = replicatedStorage:FindFirstChild("GrabEvents")
+
+NoBlobSettingsGroup:AddDropdown("DestroyHeightMode", {
+    Text = "Destroy Height Mode",
+    Values = { "Spawn (Ground)", "Heaven", "Custom" },
+    Default = 1,
+    Callback = function(v)
+        if v == "Heaven" then
+            DestroySelectedHeight = "Heaven"
+        elseif v == "Custom" then
+            DestroySelectedHeight = "Custom"
+        else
+            DestroySelectedHeight = "Spawn"
+        end
+    end,
+})
+
+NoBlobSettingsGroup:AddSlider("DestroyCustomHeight", {
+    Text = "Destroy Height (Custom)",
+    Default = 35, Min = 0, Max = 200, Rounding = 0, Suffix = " studs",
+    Callback = function(v) DestroyCustomHeight = v end,
+})
+
+NoBlobSettingsGroup:AddSlider("DestroyLineCount", {
+    Text = "Line Count",
+    Default = 39, Min = 1, Max = 100, Rounding = 0,
+    Callback = function(v) DestroyLineCount = v end,
+})
+
+NoBlobSettingsGroup:AddSlider("DestroyRadius", {
+    Text = "Radius",
+    Default = 85, Min = 5, Max = 300, Rounding = 0, Suffix = " studs",
+    Callback = function(v) DestroyRadius = v end,
+})
+
+NoBlobSettingsGroup:AddSlider("DestroyOwnerSpamCount", {
+    Text = "Owner Spam Count",
+    Default = 2, Min = 1, Max = 20, Rounding = 0,
+    Callback = function(v) DestroyOwnerSpamCount = v end,
+})
+
+NoBlobSettingsGroup:AddSlider("DestroyOwnerSpamInterval", {
+    Text = "Owner Spam Interval",
+    Default = 0.01, Min = 0.01, Max = 1, Rounding = 2, Suffix = "s",
+    Callback = function(v) DestroyOwnerSpamInterval = v end,
+})
+
+-- ============================================================
+-- 3. No Blob (Right)
+-- ============================================================
+local NoBlobGroup = Tabs.ServerTab:AddRightGroupbox("No Blob")
+
+NoBlobGroup:AddButton({
+    Text = "Server Destroy",
+    Func = function()
+        task.spawn(function()
+            pcall(function()
+                local h
+                if DestroySelectedHeight == "Heaven" then h = DestroyHeavenHeight
+                elseif DestroySelectedHeight == "Custom" then h = DestroyCustomHeight
+                else h = 35 end
+
+                DestroyLineLagEnabled = true
+                task.spawn(function()
+                    while DestroyLineLagEnabled do
+                        pcall(function()
+                            local cl = DestroyGrabEvents and DestroyGrabEvents:FindFirstChild("CreateGrabLine")
+                            if cl then
+                                local sl = Workspace:FindFirstChild("SpawnLocation") or Workspace:FindFirstChild("Spawn") or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"))
+                                if sl then
+                                    for _ = 1, DestroyLineCount do
+                                        cl:FireServer(sl, CFrame.new(math.random(-1e9, 1e9), 0, math.random(-1e9, 1e9)))
+                                    end
+                                end
+                            end
+                        end)
+                        task.wait(0.01)
+                    end
+                end)
+                task.wait(1)
+
+                local ps = {}
+                for _, plr in pairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer and not (_G.ClyrixWhitelist and _G.ClyrixWhitelist[plr.Name]) then
+                        table.insert(ps, plr)
+                    end
+                end
+                if #ps == 0 then DestroyLineLagEnabled = false return end
+
+                local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if not myHrp then DestroyLineLagEnabled = false return end
+
+                local pd = {}
+                for _, plr in ipairs(ps) do
+                    local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then table.insert(pd, { player = plr, hrp = hrp }) end
+                end
+
+                for _, d in ipairs(pd) do
+                    pcall(function() myHrp.CFrame = d.hrp.CFrame * CFrame.new(0, 5, 5) myHrp.AssemblyLinearVelocity = Vector3.zero end)
+                    task.wait(0.2)
+                    if DestroyGrabEvents then
+                        local so = DestroyGrabEvents:FindFirstChild("SetNetworkOwner")
+                        if so then
+                            for _ = 1, DestroyOwnerSpamCount do
+                                pcall(function() so:FireServer(d.hrp, d.hrp.CFrame) end)
+                                pcall(function() so:FireServer(d.hrp) end)
+                                task.wait(DestroyOwnerSpamInterval)
+                            end
+                        end
+                    end
+                    task.wait()
+                end
+
+                local step = (math.pi * 2) / #pd
+                for i, d in ipairs(pd) do
+                    local a = (i - 1) * step
+                    local x, z = math.cos(a) * DestroyRadius, math.sin(a) * DestroyRadius
+                    pcall(function() d.hrp.CFrame = CFrame.new(x, h, z) d.hrp.AssemblyLinearVelocity = Vector3.zero end)
+                    local bp = Instance.new("BodyPosition")
+                    bp.MaxForce = Vector3.new(1e19, 1e19, 1e19)
+                    bp.P = 1e19
+                    bp.Position = Vector3.new(x, h, z)
+                    bp.Parent = d.hrp
+                    task.delay(2, function() pcall(function() bp:Destroy() end) end)
+                    task.wait()
+                end
+
+                for _ = 1, 8 do
+                    for _, d in ipairs(pd) do
+                        pcall(function()
+                            local cl = DestroyGrabEvents:FindFirstChild("CreateGrabLine")
+                            local dl = DestroyGrabEvents:FindFirstChild("DestroyGrabLine")
+                            if cl and dl then
+                                cl:FireServer(d.hrp, CFrame.new(0, 1e9, 0))
+                                task.wait()
+                                dl:FireServer(d.hrp)
+                            end
+                        end)
+                    end
+                    task.wait(0.3)
+                end
+            end)
+        end)
+    end,
+})
+
+NoBlobGroup:AddToggle("DestroyLineLagToggle", {
+    Text = "Run Line Lag Alone",
+    Default = false,
+    Callback = function(v)
+        DestroyLineLagEnabled = v
+        if v then
+            task.spawn(function()
+                while DestroyLineLagEnabled do
+                    pcall(function()
+                        local cl = DestroyGrabEvents and DestroyGrabEvents:FindFirstChild("CreateGrabLine")
+                        if cl then
+                            local sl = Workspace:FindFirstChild("SpawnLocation") or Workspace:FindFirstChild("Spawn") or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"))
+                            if sl then
+                                for _ = 1, DestroyLineCount do
+                                    cl:FireServer(sl, CFrame.new(math.random(-1e9, 1e9), 0, math.random(-1e9, 1e9)))
+                                end
+                            end
+                        end
+                    end)
+                    task.wait(0.01)
+                end
+            end)
+        end
+    end,
+})
+
+NoBlobGroup:AddButton({
+    Text = "Stop Lag",
+    Func = function()
+        DestroyLineLagEnabled = false
+        if Toggles.DestroyLineLagToggle then
+            pcall(function() Toggles.DestroyLineLagToggle:SetValue(false) end)
+        end
+    end,
+})
+
+-- ============================================================
+-- 4. Blobman (Right)
+-- ============================================================
+local ClyrixBlobGroup = Tabs.ServerTab:AddRightGroupbox("Blobman", "user")
+
+local ClyrixBlobLastSeatNotify = 0
+local ClyrixBlobCurrent = nil
+local ClyrixBlobKillRunning = false
+local ClyrixBlobKickAllRunning = false
+
+local function ClyrixBlobRequireSeated()
+    local ok = false
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local seat = hum and hum.SeatPart
+        if seat and seat:IsA("VehicleSeat") then
+            local obj = seat
+            while obj do
+                if obj:IsA("Model") and obj.Name == "CreatureBlobman" then ok = true return end
+                obj = obj.Parent
+            end
+        end
+    end)
+    if ok then return true end
+    if tick() - ClyrixBlobLastSeatNotify > 2 then
+        ClyrixBlobLastSeatNotify = tick()
+        ClyrixNotify("Blobman", "Please sit on Blobman first", 3)
+    end
+    return false
+end
+
+local function ClyrixBlobIsTargetable(player)
+    if not player or player == LocalPlayer then return false end
+    if _G.ClyrixWhitelist and _G.ClyrixWhitelist[player.Name] then return false end
+    return true
+end
+
+local function ClyrixBlobGetSeatedBlobman()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return nil end
+    local seat = humanoid.SeatPart
+    if not seat or not seat:IsA("VehicleSeat") then return nil end
+    local obj = seat
+    while obj do
+        if obj:IsA("Model") and obj.Name == "CreatureBlobman" then return obj end
+        obj = obj.Parent
+    end
+    return nil
+end
+
+local function ClyrixBlobSpawn()
+    local seated = ClyrixBlobGetSeatedBlobman()
+    if seated then ClyrixBlobCurrent = seated return seated end
+    if ClyrixBlobCurrent and ClyrixBlobCurrent.Parent then return ClyrixBlobCurrent end
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return nil end
+    pcall(function() replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", rootPart.CFrame * CFrame.new(0, 0, -5), Vector3.new(0, 127, 0)) end)
+    local blobman = nil
+    local startTime = tick()
+    repeat
+        local toyFolder = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+        if toyFolder then blobman = toyFolder:FindFirstChild("CreatureBlobman") end
+        if blobman then break end
+        task.wait()
+    until tick() - startTime > 2
+    if not blobman then return nil end
+    ClyrixBlobCurrent = blobman
+    return blobman
+end
+
+local function ClyrixBlobKillPlayer(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return false end
+    local humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    for _ = 1, 5 do
+        pcall(function() humanoid.BreakJointsOnDeath = false humanoid:ChangeState(Enum.HumanoidStateType.Dead) end)
+        if humanoid.Health <= 0 then return true end
+        task.wait(0.01)
+    end
+    return false
+end
+
+local function ClyrixBlobGrabRelease(blobman, targetRoot)
+    if not blobman or not targetRoot then return end
+    pcall(function()
+        local script = blobman:FindFirstChild("BlobmanSeatAndOwnerScript")
+        if script then
+            script.CreatureGrab:FireServer(blobman.LeftDetector, targetRoot, blobman.LeftDetector.LeftWeld)
+            script.CreatureRelease:FireServer(blobman.LeftDetector.LeftWeld)
+        end
+    end)
+end
+
+local function ClyrixBlobKillAll()
+    if not ClyrixBlobRequireSeated() then return end
+    local localChar = LocalPlayer.Character
+    if not localChar or not localChar:FindFirstChild("HumanoidRootPart") then return end
+    local rootPart = localChar.HumanoidRootPart
+    local blobman = ClyrixBlobSpawn()
+    if not blobman then return end
+    local targets = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if ClyrixBlobIsTargetable(player) and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(targets, player)
+        end
+    end
+    if #targets == 0 then ClyrixNotify("Blobman", "No targets (whitelist active)", 3) return end
+    for _, player in ipairs(targets) do
+        if not ClyrixBlobKillRunning then break end
+        local targetChar = player.Character
+        if targetChar then
+            local humanoid = targetChar:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    rootPart.CFrame = targetRoot.CFrame
+                    task.wait(0.02)
+                    ClyrixBlobKillPlayer(player)
+                    for _ = 1, 2 do ClyrixBlobGrabRelease(blobman, targetRoot) task.wait(0.01) end
+                end
+            end
+        end
+    end
+end
+
+local function ClyrixBlobKickAll()
+    if ClyrixBlobKickAllRunning then return end
+    if not ClyrixBlobRequireSeated() then return end
+    ClyrixBlobKickAllRunning = true
+    local allPlayers = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if ClyrixBlobIsTargetable(player) then table.insert(allPlayers, player) end
+    end
+    if #allPlayers == 0 then ClyrixNotify("Blobman", "No targets (whitelist active)", 3) ClyrixBlobKickAllRunning = false return end
+    local char = LocalPlayer.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    if rootPart then pcall(function() replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("CreatureBlobman", rootPart.CFrame * CFrame.new(0, 0, -5), Vector3.new(0, 127, 0)) end) end
+    task.wait(0.5)
+    local toyFolder = Workspace:FindFirstChild(LocalPlayer.Name .. "SpawnedInToys")
+    local currentBlob = toyFolder and toyFolder:FindFirstChild("CreatureBlobman")
+    if not currentBlob then ClyrixBlobKickAllRunning = false return end
+    local vehicleSeat = currentBlob:FindFirstChild("VehicleSeat")
+    if vehicleSeat and LocalPlayer.Character then pcall(function() vehicleSeat:Sit(LocalPlayer.Character:FindFirstChildOfClass("Humanoid")) end) end
+    task.wait(0.3)
+    local myRoot = rootPart
+    if not myRoot then ClyrixBlobKickAllRunning = false return end
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            myRoot.CFrame = targetRoot.CFrame
+            task.wait(0.02)
+            for i = 1, 3 do
+                pcall(function()
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld)
+                    currentBlob.BlobmanSeatAndOwnerScript.CreatureRelease:FireServer(currentBlob.LeftDetector.LeftWeld)
+                end)
+                if i < 3 then task.wait(0.08) end
+            end
+        end
+    end
+    myRoot.CFrame = CFrame.new(0, 100, 0)
+    task.wait(0.1)
+    for i, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            local angle = math.rad((i - 1) * (360 / #allPlayers))
+            targetRoot.CFrame = CFrame.new(15 * math.cos(angle), 110, 15 * math.sin(angle))
+        end
+    end
+    task.wait(0.1)
+    for _ = 1, 2 do
+        for _, targetPlayer in ipairs(allPlayers) do
+            local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
+                task.spawn(function() pcall(function() replicatedStorage.GrabEvents.SetNetworkOwner:FireServer(targetRoot, CFrame.new(targetRoot.Position)) replicatedStorage.GrabEvents.DestroyGrabLine:FireServer(targetRoot) end) end)
+            end
+        end
+        task.wait(0.1)
+    end
+    task.wait(0.3)
+    for _, targetPlayer in ipairs(allPlayers) do
+        local targetRoot = targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            task.spawn(function() pcall(function()
+                currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(currentBlob.LeftDetector, targetRoot, currentBlob.LeftDetector.LeftWeld)
+                currentBlob.BlobmanSeatAndOwnerScript.CreatureGrab:FireServer(currentBlob.RightDetector, targetRoot, currentBlob.RightDetector.RightWeld)
+            end) end)
+        end
+    end
+    task.wait(0.1)
+    myRoot.CFrame = CFrame.new(0, -50000, 0)
+    for _, part in ipairs(currentBlob:GetDescendants()) do
+        if part:IsA("BasePart") then pcall(function() part.Anchored = false end) end
+    end
+    task.wait(1)
+    ClyrixBlobKickAllRunning = false
+end
+
+ClyrixBlobGroup:AddToggle("ClyrixBlobKillAllToggle", {
+    Text = "Blobman Kill All",
+    Default = false,
+    Callback = function(v)
+        ClyrixBlobKillRunning = v
+        if v then
+            task.spawn(function()
+                while ClyrixBlobKillRunning do
+                    ClyrixBlobKillAll()
+                    task.wait(0.5)
+                end
+            end)
+        end
+    end,
+})
+
+ClyrixBlobGroup:AddButton({
+    Text = "Blobman Kick All",
+    Func = function() task.spawn(ClyrixBlobKickAll) end,
+})
+
+-- ============================================================
+-- 5. Crash (Right Bottom)
+-- ============================================================
+local CrashGroup = Tabs.ServerTab:AddRightGroupbox("Crash", "alert-triangle")
+
+CrashGroup:AddButton({
+    Text = "Crash Server",
+    Risky = true,
+    Func = function()
+        pcall(function()
+            local RS = game:GetService("ReplicatedStorage")
+            local DataEvents = RS:FindFirstChild("DataEvents")
+            if not DataEvents then return end
+            local UpdTextures = DataEvents:FindFirstChild("UpdateTexturesChoice")
+            if UpdTextures then UpdTextures:FireServer(string.rep("A", 5000000)) end
+            local DataRemote = DataEvents:FindFirstChild("DataRemoteEvent")
+            if DataRemote then for _ = 1, 1000000 do DataRemote:FireServer() end end
+        end)
+    end,
+})
+
+end) -- pcall end
+
+if not serverOK then
+    warn("[Clyrix] Server init error: " .. tostring(serverErr))
 end
