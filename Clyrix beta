@@ -3908,6 +3908,217 @@ KillGroup:AddToggle("KillMode_NileLoopKill", {
 })
 
 -- ============================================================
+-- Kill 3 (Resonance)
+-- ============================================================
+do
+    local ResStarterGui = game:GetService("StarterGui")
+    local function ResNotify(title, text, duration)
+        ResStarterGui:SetCore("SendNotification", {
+            Title = title, Text = text, Duration = duration or 5,
+        })
+    end
+
+    local ResPlayers           = game:GetService("Players")
+    local ResReplicatedStorage = game:GetService("ReplicatedStorage")
+    local ResRunService        = game:GetService("RunService")
+    local ResLocalPlayer       = ResPlayers.LocalPlayer
+
+    local function GetEvent(category, name, isFunction)
+        local folderName = isFunction and category or (category .. "Events")
+        local folder = ResReplicatedStorage:WaitForChild(folderName, 5)
+        if not folder then return nil end
+        return folder:WaitForChild(name, 5)
+    end
+
+    local Remotes = {
+        SetNetworkOwner = GetEvent("Grab", "SetNetworkOwner"),
+        DestroyGrabLine = GetEvent("Grab", "DestroyGrabLine"),
+    }
+
+    if not Remotes.SetNetworkOwner then
+        warn("[Clyrix] Resonance Kill: Remotes not found.")
+        return
+    end
+
+    local State = {
+        Owning        = false,
+        KillDebounce  = {},
+        DestroyThread = nil,
+    }
+
+    local FallenPartsDestroyHeight = 0/0
+
+    local function Char(player)
+        if not player then return nil end
+        local char = player.Character
+        if not char then return nil end
+        local root = char:FindFirstChild("realHrp") or char:FindFirstChild("HumanoidRootPart")
+        local humanoid = char:FindFirstChild("Humanoid")
+        return char, root, humanoid
+    end
+
+    local PartOwnerCache = setmetatable({}, { __mode = "k" })
+    local function IsPartOwner(part)
+        if not part or not part:IsA("BasePart") then return false end
+        local cached = PartOwnerCache[part]
+        if cached and cached.Parent then return cached.Value == ResLocalPlayer.Name end
+        local parent = part.Parent
+        if part.Name == "HumanoidRootPart" then
+            local head = parent and parent:FindFirstChild("Head")
+            head = head and head:FindFirstChild("PartOwner")
+            if head and head.Value == ResLocalPlayer.Name then PartOwnerCache[part] = head; return true end
+        end
+        local po = part:FindFirstChild("PartOwner")
+        if po and po.Value == ResLocalPlayer.Name then PartOwnerCache[part] = po; return true end
+        local parentPO = parent and parent:FindFirstChild("PartOwner", true)
+        if parentPO then PartOwnerCache[part] = parentPO; return parentPO.Value == ResLocalPlayer.Name end
+        return false
+    end
+
+    local function ResSNO(part, timeout)
+        local char, root, humanoid = Char(ResLocalPlayer)
+        local head = char and char:FindFirstChild("Head")
+        if not (head and root and humanoid and humanoid.Health > 0) then return false end
+        if not part or not part:IsA("BasePart") or not part.Parent
+            or (part.Position - workspace.SpawnLocation.Position).Magnitude > 10000000 then return false end
+        if IsPartOwner(part) then return true end
+        if State.Owning then return false end
+
+        local farMode    = (root.Position - part.Position).Magnitude >= 31
+        local savedRoot  = CFrame.new()
+        local savedHead  = CFrame.new()
+        local targetCF   = root.CFrame
+        local connection = nil
+
+        State.Owning = true
+
+        local function startTrick()
+            savedRoot = root.CFrame
+            savedHead = head.CFrame
+            targetCF  = root.CFrame
+            ResRunService:BindToRenderStep("RSCClient", Enum.RenderPriority.Camera.Value - 1, function()
+                if root and root.Parent then root.CFrame = savedRoot end
+                if head and head.Parent then head.CFrame = savedHead end
+            end)
+            connection = ResRunService.Heartbeat:Connect(function()
+                if root and root.Parent then savedRoot = root.CFrame; root.CFrame = targetCF end
+                if head and head.Parent then savedHead = head.CFrame; head.CFrame = targetCF end
+            end)
+        end
+
+        local function stopTrick()
+            pcall(function() ResRunService:UnbindFromRenderStep("RSCClient") end)
+            if connection then connection:Disconnect(); connection = nil end
+            if root and root.Parent then root.CFrame = savedRoot end
+            if head and head.Parent then head.CFrame = savedHead end
+        end
+
+        timeout = timeout or 0.65
+        local started = tick()
+
+        local ok = pcall(function()
+            if farMode then startTrick() end
+            while part.Parent and not IsPartOwner(part) and humanoid.Health ~= 0 and root.Parent and (tick() - started < timeout) do
+                if farMode then targetCF = part.CFrame - Vector3.new(0, 22, 0) end
+                ResRunService.Heartbeat:Wait()
+
+                local n36
+                if farMode then n36 = targetCF * CFrame.new(0, 1.593, 0) else n36 = root.CFrame * CFrame.new(0, 1.593, 0) end
+                local grabCFrame = CFrame.new(n36.Position, part.Position)
+                Remotes.SetNetworkOwner:FireServer(part, grabCFrame)
+            end
+        end)
+
+        if farMode then pcall(stopTrick) end
+        State.Owning = false
+        if not ok then return false end
+        return IsPartOwner(part)
+    end
+
+    local function ResRNO(part)
+        if Remotes.DestroyGrabLine and part and part.Parent then
+            Remotes.DestroyGrabLine:FireServer(part)
+        end
+    end
+
+    local function ResPivotTo(model, cframe)
+        if not model or not model:IsA("Model") or typeof(cframe) ~= "CFrame" then return end
+        local delta = cframe * model:GetPivot():Inverse()
+        for _, p in ipairs(model:GetDescendants()) do
+            if p:IsA("BasePart") then
+                local r = p.AssemblyRootPart
+                if r and not p.Anchored and not r.Anchored then
+                    p.CFrame = delta * p.CFrame
+                end
+            end
+        end
+    end
+
+    local function ResDestroyObject(char, root)
+        if not char or not char:IsA("Model") then return end
+        if not root or root.Anchored or not ResSNO(root) then return end
+
+        local orig = workspace.FallenPartsDestroyHeight
+        workspace.FallenPartsDestroyHeight = FallenPartsDestroyHeight
+        ResPivotTo(char, CFrame.new(0, -11111, 0))
+
+        if State.DestroyThread then task.cancel(State.DestroyThread) end
+        local ping = 0
+        pcall(function() ping = ResLocalPlayer:GetNetworkPing() end)
+
+        State.DestroyThread = task.delay(math.clamp(ping + 0.05, 0.08, 0.25), function()
+            workspace.FallenPartsDestroyHeight = -10000
+            task.wait()
+            workspace.FallenPartsDestroyHeight = orig or -100
+            State.DestroyThread = nil
+        end)
+        task.delay(0.5, ResRNO, root)
+        return true
+    end
+
+    local function ResKill(player)
+        local char, root, humanoid = Char(player)
+        if not (humanoid and humanoid.Health ~= 0 and root) then return end
+        if (root.Position - workspace.SpawnLocation.Position).Magnitude > 15000 then return end
+        if State.KillDebounce[char] then return end
+
+        humanoid.BreakJointsOnDeath = false
+        humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+        ResDestroyObject(char, root)
+
+        State.KillDebounce[char] = true
+        task.delay(1, function()
+            State.KillDebounce[char] = nil
+        end)
+    end
+
+    -- トグルの状態管理
+    local ResKillRunning = false
+
+    -- UIの追加
+    KillGroup:AddToggle("KillMode_ResonanceKill", {
+        Text = "kill 3 (Resonance)",
+        Default = false,
+        Callback = function(v)
+            ResKillRunning = v
+            if v then
+                task.spawn(function()
+                    while ResKillRunning do
+                        local target = selectedTargetPlayerObj
+                        if target and target.Character then
+                            local hum = target.Character:FindFirstChild("Humanoid")
+                            if hum and hum.Health > 0 then
+                                pcall(ResKill, target)
+                            end
+                        end
+                        task.wait(0.3)
+                    end
+                end)
+            end
+        end,
+    })
+end
+-- ============================================================
 -- ★ 2. Ragdoll (右側 真ん中)
 -- ============================================================
 local RagdollGroup = Tabs.TargetTab:AddRightGroupbox("Ragdoll")
