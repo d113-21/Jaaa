@@ -476,191 +476,15 @@ do
         if row then row:Destroy() end
     end)
 end
-
 -- =====================================================
--- Clyrix | FPS | Ping ウォーターマーク (+ アップデート情報)
+-- Clyrix | FPS | Ping ウォーターマーク
 -- =====================================================
 do
     local Stats = game:GetService("Stats")
     local RunService = game:GetService("RunService")
-    local UserInputService = game:GetService("UserInputService")
 
-    -- ScreenGuiの作成
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "ClyrixWatermarkGui"
-    gui.ResetOnSpawn = false
-    gui.DisplayOrder = 999
-    local parented = false
-    if gethui then parented = pcall(function() gui.Parent = gethui() end) end
-    if not parented then gui.Parent = game:GetService("CoreGui") end
+    local Watermark = Library:AddDraggableLabel("Clyrix | 0 FPS | 0 ms")
 
-    local mainColor = Library.Scheme.MainColor
-    local outlineColor = Library.Scheme.OutlineColor
-    local fontColor = Library.Scheme.FontColor
-
-    -- メインフレーム（ドラッグ可能）
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.fromOffset(0, 30) -- 中身に合わせて自動調整
-    mainFrame.AutomaticSize = Enum.AutomaticSize.X
-    mainFrame.BackgroundColor3 = mainColor
-    mainFrame.BackgroundTransparency = 0.1
-    mainFrame.Position = UDim2.fromOffset(10, 10)
-    mainFrame.Parent = gui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = mainFrame
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = outlineColor
-    stroke.Thickness = 1
-    stroke.Parent = mainFrame
-
-    -- 横並びレイアウト
-    local layout = Instance.new("UIListLayout")
-    layout.FillDirection = Enum.FillDirection.Horizontal
-    layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    layout.Padding = UDim.new(0, 8)
-    layout.Parent = mainFrame
-
-    local padding = Instance.new("UIPadding")
-    padding.PaddingLeft = UDim.new(0, 10)
-    padding.PaddingRight = UDim.new(0, 6)
-    padding.Parent = mainFrame
-
-    -- アイコン（盾）
-    local icon = Instance.new("ImageLabel")
-    icon.Size = UDim2.fromOffset(16, 16)
-    icon.BackgroundTransparency = 1
-    icon.Image = "rbxassetid://94028363129362" -- Clyrixアイコン
-    icon.Parent = mainFrame
-
-    -- テキストラベル
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.fromOffset(0, 20)
-    label.AutomaticSize = Enum.AutomaticSize.X
-    label.Text = "Clyrix | 0 FPS | 0 ms"
-    label.TextColor3 = fontColor
-    label.TextSize = 14
-    label.Font = Enum.Font.Gotham
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = mainFrame
-
-    -- + ボタン
-    local plusBtn = Instance.new("TextButton")
-    plusBtn.Size = UDim2.fromOffset(20, 20)
-    plusBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    plusBtn.Text = "+"
-    plusBtn.TextColor3 = fontColor
-    plusBtn.TextSize = 16
-    plusBtn.Font = Enum.Font.GothamBold
-    plusBtn.AutoButtonColor = false
-    plusBtn.Parent = mainFrame
-
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = plusBtn
-
-    -- アップデートパネル
-    local updatePanel = Instance.new("Frame")
-    updatePanel.Name = "UpdatePanel"
-    updatePanel.Position = UDim2.new(0, 0, 1, 6)
-    updatePanel.Size = UDim2.fromOffset(280, 0)
-    updatePanel.AutomaticSize = Enum.AutomaticSize.Y
-    updatePanel.BackgroundColor3 = mainColor
-    updatePanel.BackgroundTransparency = 0.05
-    updatePanel.Visible = false
-    updatePanel.Parent = mainFrame
-
-    local pCorner = Instance.new("UICorner")
-    pCorner.CornerRadius = UDim.new(0, 6)
-    pCorner.Parent = updatePanel
-
-    local pStroke = Instance.new("UIStroke")
-    pStroke.Color = outlineColor
-    pStroke.Thickness = 1
-    pStroke.Parent = updatePanel
-
-    local pPad = Instance.new("UIPadding")
-    pPad.PaddingTop = UDim.new(0, 10)
-    pPad.PaddingBottom = UDim.new(0, 10)
-    pPad.PaddingLeft = UDim.new(0, 12)
-    pPad.PaddingRight = UDim.new(0, 12)
-    pPad.Parent = updatePanel
-
-    local pLayout = Instance.new("UIListLayout")
-    pLayout.Padding = UDim.new(0, 8)
-    pLayout.Parent = updatePanel
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 20)
-    title.BackgroundTransparency = 1
-    title.Text = "Update Information"
-    title.TextColor3 = fontColor
-    title.TextSize = 14
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = updatePanel
-
-    local divider = Instance.new("Frame")
-    divider.Size = UDim2.new(1, 0, 0, 1)
-    divider.BackgroundColor3 = outlineColor
-    divider.BackgroundTransparency = 0.5
-    divider.BorderSizePixel = 0
-    divider.Parent = updatePanel
-
-    local content = Instance.new("TextLabel")
-    content.Size = UDim2.new(1, 0, 0, 0)
-    content.AutomaticSize = Enum.AutomaticSize.Y
-    content.BackgroundTransparency = 1
-    content.Text = "・New UI Migration Complete\n・Added Target & Blobman Modules\n・Added Server Management Tools\n・Added Whitelist Protection\n・Added Line & Kick Notifiers"
-    content.TextColor3 = Color3.fromRGB(200, 200, 200)
-    content.TextSize = 12
-    content.Font = Enum.Font.Gotham
-    content.TextXAlignment = Enum.TextXAlignment.Left
-    content.TextYAlignment = Enum.TextYAlignment.Top
-    content.TextWrapped = true
-    content.LineHeight = 1.2
-    content.Parent = updatePanel
-
-    -- 開閉処理
-    local isOpen = false
-    plusBtn.MouseButton1Click:Connect(function()
-        isOpen = not isOpen
-        updatePanel.Visible = isOpen
-        plusBtn.Text = isOpen and "−" or "+"
-    end)
-    
-    plusBtn.MouseEnter:Connect(function() plusBtn.BackgroundColor3 = Library:GetBetterColor(mainColor, 20) end)
-    plusBtn.MouseLeave:Connect(function() plusBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) end)
-
-    -- ドラッグ処理
-    local dragging, dragInput, dragStart, startPos
-    mainFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = mainFrame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-    mainFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-
-    -- FPS / Ping 更新
     local acc = 0
     RunService.Heartbeat:Connect(function(dt)
         acc += dt
@@ -668,7 +492,7 @@ do
         acc = 0
         local fps = math.floor(Stats.Workspace.Heartbeat:GetValue())
         local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-        label.Text = ("Clyrix | %d FPS | %d ms"):format(fps, ping)
+        Watermark:SetText(("Clyrix | %d FPS | %d ms"):format(fps, ping))
     end)
 end
 -- =====================================================
