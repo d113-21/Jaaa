@@ -23,20 +23,20 @@ function Library:Notify(data)
         data = { Description = tostring(data) }
     end
     data.Title = data.Title or '<b>Clyrix v1.10.21</b>'
-    data.BigIcon = data.BigIcon or 'rbxassetid://'
+    data.BigIcon = data.BigIcon or 'rbxassetid://125585028370203'
     return OLD_NOTIFY(self, data)
 end
 
 local Window = Library:CreateWindow({
-    Title = '<b>Clyrix v1.10.21</b>',
-    Icon = '94028363129362',
-    Footer = 'Clyrix made by tmmutekitou',
+    Title = '<b>Clyrix v2.10.22</b>',
+    Icon = '125585028370203',
+    Footer = 'project clyrix v2',
     DisableSearch = false,
     EnableCompacting = true,
     SidebarCompacted = true,
     EnableSidebarResize = true,
     CornerRadius = 30,
-    BackgroundImage = 'rbxassetid://118641183',
+    BackgroundImage = 'rbxassetid://1286757860',
 })
 
 local Tabs = {
@@ -55,7 +55,7 @@ local Tabs = {
 
 Library:Notify({
     Title = '<b>Crix Notify</b>',
-    Description = 'Clyrix online',
+    Description = 'project clyrix',
     Time = 3,
 })
 
@@ -483,7 +483,7 @@ do
     local Stats = game:GetService("Stats")
     local RunService = game:GetService("RunService")
 
-    local Watermark = Library:AddDraggableLabel("Clyrix | 0 FPS | 0 ms")
+    local Watermark = Library:AddDraggableLabel("Clyrix v2.10.22 | 0 FPS | 0 ms")
 
     local acc = 0
     RunService.Heartbeat:Connect(function(dt)
@@ -492,7 +492,7 @@ do
         acc = 0
         local fps = math.floor(Stats.Workspace.Heartbeat:GetValue())
         local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-        Watermark:SetText(("Clyrix | %d FPS | %d ms"):format(fps, ping))
+        Watermark:SetText(("Clyrix v2.10.22 | %d FPS | %d ms"):format(fps, ping))
     end)
 end
 -- =====================================================
