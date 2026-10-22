@@ -3675,6 +3675,265 @@ TargetGroup:AddButton({
     end,
 })
 
+-- ============================================================
+-- ★ Target View（トグル） + Target 3D（自動左回転）
+-- 挿入位置: TargetGroup:AddButton({...}) の直後
+-- ============================================================
+local __t3dOK, __t3dErr = pcall(function()
+
+    -- -------- Target View（観戦トグル） --------
+    do
+        local viewActive = false
+        local viewPrevSubject = nil
+
+        TargetGroup:AddToggle("TargetViewToggle", {
+            Text = "Target View (Watch)",
+            Default = false,
+            Callback = function(v)
+                viewActive = v
+                if v then
+                    local target = selectedTargetPlayerObj
+                    if not target then
+                        ClyrixNotify("Target View", "Select a target first", 3)
+                        task.defer(function() Toggles.TargetViewToggle:SetValue(false) end)
+                        return
+                    end
+                    local tHum = target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+                    if not tHum then
+                        ClyrixNotify("Target View", "Target has no character", 3)
+                        task.defer(function() Toggles.TargetViewToggle:SetValue(false) end)
+                        return
+                    end
+                    viewPrevSubject = Workspace.CurrentCamera.CameraSubject
+                    Workspace.CurrentCamera.CameraSubject = tHum
+                    ClyrixNotify("Target View", "Watching: " .. target.DisplayName, 3)
+                else
+                    local myHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    Workspace.CurrentCamera.CameraSubject = viewPrevSubject or myHum
+                    viewPrevSubject = nil
+                    ClyrixNotify("Target View", "Stopped", 2)
+                end
+            end,
+        })
+
+        Players.PlayerAdded:Connect(function(plr)
+            plr.CharacterAdded:Connect(function()
+                if viewActive and plr == selectedTargetPlayerObj then
+                    task.wait(0.15)
+                    if viewActive then
+                        local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+                        if h then Workspace.CurrentCamera.CameraSubject = h end
+                    end
+                end
+            end)
+        end)
+
+        task.spawn(function()
+            local lastTarget
+            while true do
+                task.wait(0.3)
+                if viewActive then
+                    local target = selectedTargetPlayerObj
+                    if target and target ~= lastTarget then
+                        lastTarget = target
+                    end
+                    if target and target.Character then
+                        local h = target.Character:FindFirstChildOfClass("Humanoid")
+                        if h and Workspace.CurrentCamera.CameraSubject ~= h then
+                            Workspace.CurrentCamera.CameraSubject = h
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    -- -------- Target 3D（自動左回転） --------
+    do
+        local Target3DGroup = Tabs.TargetTab:AddLeftGroupbox("Target 3D", "eye")
+
+        local holder = Instance.new("Frame")
+        holder.Name = "ClyrixTarget3D"
+        holder.Size = UDim2.new(1, -8, 0, 240)
+        holder.BackgroundTransparency = 1
+        holder.ClipsDescendants = true
+        holder.LayoutOrder = -1
+
+        local view = Instance.new("ViewportFrame")
+        view.Size = UDim2.fromScale(1, 1)
+        view.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+        view.BorderSizePixel = 0
+        view.Ambient = Color3.fromRGB(180, 180, 180)
+        view.LightColor = Color3.fromRGB(255, 255, 255)
+        view.LightDirection = Vector3.new(-1, -1, -1)
+        view.Parent = holder
+
+        local crn = Instance.new("UICorner")
+        crn.CornerRadius = UDim.new(0, 8)
+        crn.Parent = view
+
+        local stk = Instance.new("UIStroke")
+        stk.Color = Color3.fromRGB(80, 80, 100)
+        stk.Thickness = 1
+        stk.Parent = view
+
+        local world = Instance.new("WorldModel")
+        world.Parent = view
+
+        local cam = Instance.new("Camera")
+        cam.FieldOfView = 40
+        cam.Parent = view
+        view.CurrentCamera = cam
+
+        -- Groupbox 内へ挿入
+        do
+            local lbl = Target3DGroup:AddLabel("")
+            local frame
+            if typeof(lbl) == "Instance" and lbl:IsA("GuiObject") then
+                frame = lbl
+            elseif type(lbl) == "table" then
+                for _, v in pairs(lbl) do
+                    if typeof(v) == "Instance" and v:IsA("GuiObject") then
+                        frame = v
+                        break
+                    end
+                end
+            end
+            if frame and frame.Parent then
+                holder.Parent = frame.Parent
+                holder.LayoutOrder = -1
+                pcall(function()
+                    frame.Visible = false
+                    frame.Size = UDim2.new(0, 0, 0, 0)
+                end)
+            end
+        end
+
+        local rotY = 0
+        local zoom = 1.0
+        local clone = nil
+        local charHeight = 6
+        local curTarget, curChar
+        local AUTO_SPIN_SPEED = 45 -- 度/秒（左回転）
+
+        local function updateCam()
+            if not clone then return end
+            local baseDist = (charHeight * 0.5) / math.tan(math.rad(cam.FieldOfView * 0.5)) * 1.3
+            local dist = baseDist * zoom
+            local cf = CFrame.Angles(0, math.rad(rotY), 0)
+            local camPos = cf * CFrame.new(0, 0, dist)
+            cam.CFrame = CFrame.lookAt(camPos.Position, Vector3.new(0, 0, 0))
+        end
+
+        local function render()
+            pcall(function() world:ClearAllChildren() end)
+            clone = nil
+            local target = selectedTargetPlayerObj
+            if not target or not target.Character then return end
+
+            local char = target.Character
+            local wasArc = char.Archivable
+            pcall(function() char.Archivable = true end)
+            for _, v in ipairs(char:GetDescendants()) do
+                pcall(function() v.Archivable = true end)
+            end
+            local ok, c = pcall(function() return char:Clone() end)
+            pcall(function() char.Archivable = wasArc end)
+            if not ok or not c then return end
+
+            for _, v in ipairs(c:GetDescendants()) do
+                pcall(function()
+                    if v:IsA("BasePart") then
+                        v.Anchored = true
+                        v.CanCollide = false
+                        v.CanTouch = false
+                        v.CanQuery = false
+                    elseif v:IsA("Script") or v:IsA("LocalScript") or v:IsA("Sound")
+                        or v:IsA("BodyMover") or v:IsA("AlignPosition") or v:IsA("AlignOrientation")
+                        or v:IsA("BodyPosition") or v:IsA("BodyGyro") or v:IsA("BodyVelocity")
+                        or v:IsA("BodyAngularVelocity") or v:IsA("BodyForce") or v:IsA("VectorForce")
+                        or v:IsA("LinearVelocity") or v:IsA("AngularVelocity") then
+                        v:Destroy()
+                    end
+                end)
+            end
+
+            c.Parent = world
+            clone = c
+
+            local ref = c:FindFirstChild("HumanoidRootPart")
+                or c:FindFirstChild("UpperTorso")
+                or c:FindFirstChild("Torso")
+                or c:FindFirstChild("Head")
+                or c:FindFirstChildWhichIsA("BasePart")
+            if not ref then return end
+
+            local origin = ref.Position
+            local look = ref.CFrame.LookVector
+            local theta = math.atan2(look.X, look.Z)
+            local rotOffset = CFrame.Angles(0, -theta, 0)
+            local minV, maxV
+            for _, v in ipairs(c:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    pcall(function()
+                        v.CFrame = rotOffset * (v.CFrame - origin)
+                        if v.Transparency < 1 then
+                            local p = v.Position
+                            local h = v.Size * 0.5
+                            local mins, maxs = p - h, p + h
+                            if not minV then
+                                minV, maxV = mins, maxs
+                            else
+                                minV = Vector3.new(math.min(minV.X, mins.X), math.min(minV.Y, mins.Y), math.min(minV.Z, mins.Z))
+                                maxV = Vector3.new(math.max(maxV.X, maxs.X), math.max(maxV.Y, maxs.Y), math.max(maxV.Z, maxs.Z))
+                            end
+                        end
+                    end)
+                end
+            end
+
+            if not minV then minV = Vector3.new(-2, -3, -1); maxV = Vector3.new(2, 3, 1) end
+            local center = (minV + maxV) * 0.5
+            local sizeVec = maxV - minV
+            charHeight = math.max(sizeVec.Y, 3)
+            for _, v in ipairs(c:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    pcall(function() v.CFrame = v.CFrame - center end)
+                end
+            end
+            updateCam()
+        end
+
+        -- 自動左回転ループ
+        RunService.RenderStepped:Connect(function(dt)
+            if not clone then return end
+            rotY = rotY + AUTO_SPIN_SPEED * dt
+            if rotY >= 360 then rotY = rotY - 360 end
+            updateCam()
+        end)
+
+        -- ターゲット変更/リスポーン検知 → 再描画
+        task.spawn(function()
+            task.wait(0.5)
+            while true do
+                local target = selectedTargetPlayerObj
+                local char = target and target.Character
+                if target ~= curTarget or char ~= curChar then
+                    curTarget = target
+                    curChar = char
+                    render()
+                end
+                task.wait(0.5)
+            end
+        end)
+    end
+
+end) -- pcall end
+
+if not __t3dOK then
+    ClyrixNotify("Target 3D", "Init error: " .. tostring(__t3dErr), 5)
+end
+
 selectedPlrName = nil
 selectedKickPlayer = nil
 task.spawn(function()
