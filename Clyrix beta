@@ -6830,6 +6830,166 @@ end) -- pcall end
 if not serverOK then
     warn("[Clyrix] Server init error: " .. tostring(serverErr))
 end
+-- ============================================================
+-- Server タブ: base block delete (右側一番下)
+-- ============================================================
+task.defer(function()
+    local success, err = pcall(function()
+        local BaseDeleteGroup = Tabs.ServerTab:AddRightGroupbox("base block delete")
+
+        local AutoGroundBreakEnabled = false
+        local clickConnection_Ground = nil
+        local groundSpawnedShurikens = {}
+
+        -- 実際の処理
+        local function spawnAndBreakPart(targetPart)
+            if not targetPart or targetPart:IsA("Terrain") then return end
+            
+            local replicatedStorage = game:GetService("ReplicatedStorage")
+            local PlayerEvents = replicatedStorage:FindFirstChild("PlayerEvents")
+            local stickyEvent = PlayerEvents and PlayerEvents:FindFirstChild("StickyPartEvent")
+            local SpawnToyRemote = nil
+            local SetNetworkOwner = nil
+            local DestroyToy = nil
+            
+            for _, v in pairs(replicatedStorage:GetDescendants()) do
+                if v:IsA("RemoteEvent") then
+                    if v.Name == "SetNetworkOwner" then SetNetworkOwner = v
+                    elseif v.Name == "DestroyToy" then DestroyToy = v end
+                elseif v:IsA("RemoteFunction") and v.Name == "SpawnToyRemoteFunction" then
+                    SpawnToyRemote = v
+                end
+            end
+
+            if not stickyEvent or not SpawnToyRemote then
+                Library:Notify({Title = "Error", Description = "Required Remotes not found.", Time = 3})
+                return
+            end
+
+            local plr = game:GetService("Players").LocalPlayer
+            local canSpawn = plr:FindFirstChild("CanSpawnToy")
+            local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            
+            local inv = workspace:FindFirstChild(plr.Name.."SpawnedInToys") or workspace
+            local preExisting = {}
+            for _, child in pairs(inv:GetChildren()) do
+                if child.Name == "NinjaShuriken" then table.insert(preExisting, child) end
+            end
+
+            if (not canSpawn or canSpawn.Value) then
+                pcall(function()
+                    SpawnToyRemote:InvokeServer("NinjaShuriken", hrp.CFrame * CFrame.new(0, 2, 8), Vector3.new(0,0,0))
+                end)
+
+                local newShuriken = nil
+                local searchStart = tick()
+                while tick() - searchStart < 2 do
+                    for _, child in pairs(inv:GetChildren()) do
+                        if child.Name == "NinjaShuriken" and not table.find(preExisting, child) then
+                            newShuriken = child
+                            break
+                        end
+                    end
+                    if newShuriken then
+                        if SetNetworkOwner then
+                            local soundPart = newShuriken:FindFirstChild("SoundPart") or newShuriken:WaitForChild("SoundPart", 0.1)
+                            if soundPart then
+                                pcall(function() SetNetworkOwner:FireServer(soundPart, soundPart.CFrame) end)
+                            end
+                        end
+                        break
+                    end
+                    task.wait()
+                end
+
+                if newShuriken and newShuriken:FindFirstChild("StickyPart") then
+                    table.insert(groundSpawnedShurikens, newShuriken)
+                    pcall(function()
+                        stickyEvent:FireServer(
+                            newShuriken.StickyPart,
+                            targetPart,
+                            CFrame.new(9.99999996e+11, 9.99999996e+11, 9.99999996e+11, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+                        )
+                    end)
+                end
+            end
+        end
+
+        local function cleanupGroundShurikens()
+            local replicatedStorage = game:GetService("ReplicatedStorage")
+            local DestroyToy = nil
+            for _, v in pairs(replicatedStorage:GetDescendants()) do
+                if v:IsA("RemoteEvent") and v.Name == "DestroyToy" then DestroyToy = v break end
+            end
+            if DestroyToy then
+                for _, shuriken in pairs(groundSpawnedShurikens) do
+                    if shuriken and shuriken.Parent then
+                        pcall(function() DestroyToy:FireServer(shuriken) end)
+                    end
+                end
+            end
+            groundSpawnedShurikens = {}
+        end
+
+        BaseDeleteGroup:AddToggle("FootGroundBreak", {
+            Text = "Foot",
+            Default = false,
+            Callback = function(Value)
+                AutoGroundBreakEnabled = Value
+                if AutoGroundBreakEnabled then
+                    task.spawn(function()
+                        while AutoGroundBreakEnabled do
+                            local character = game:GetService("Players").LocalPlayer.Character
+                            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+                            if hrp then
+                                local rayParams = RaycastParams.new()
+                                rayParams.FilterDescendantsInstances = {character}
+                                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                                local rayResult = workspace:Raycast(hrp.Position, Vector3.new(0, -10, 0), rayParams)
+                                local targetPart = rayResult and rayResult.Instance
+                                if targetPart and targetPart:IsA("BasePart") and not targetPart:IsA("Terrain") then
+                                    spawnAndBreakPart(targetPart)
+                                end
+                            end
+                            task.wait(0.8)
+                        end
+                    end)
+                else
+                    cleanupGroundShurikens()
+                end
+            end,
+        })
+
+        BaseDeleteGroup:AddToggle("TapGroundBreak", {
+            Text = "Tap",
+            Default = false,
+            Callback = function(Value)
+                if Value then
+                    local mouse = game:GetService("Players").LocalPlayer:GetMouse()
+                    if mouse then
+                        clickConnection_Ground = mouse.Button1Down:Connect(function()
+                            local targetPart = mouse.Target
+                            if targetPart and targetPart:IsA("BasePart") and not targetPart:IsA("Terrain") then
+                                spawnAndBreakPart(targetPart)
+                            end
+                        end)
+                    end
+                else
+                    if clickConnection_Ground then
+                        clickConnection_Ground:Disconnect()
+                        clickConnection_Ground = nil
+                    end
+                    cleanupGroundShurikens()
+                end
+            end,
+        })
+    end)
+    
+    if not success then
+        warn("[Clyrix] Base Block Delete Error: " .. tostring(err))
+    end
+end)
 
 -- =====================================================
 -- Visuals タブ: ESP / Black Hole / Time / Shader
@@ -7042,6 +7202,298 @@ task.spawn(function()
         end
     end
 end)
+
+-- =====================================================
+-- Visuals: Minecraft Textures
+-- =====================================================
+do
+    local MCState = {
+        mcTexturesEnabled = false,
+        mcTileSize = 4,
+    }
+
+    local mcOriginalPartTextures = {}
+
+    local TexIds = {
+        Rock         = "rbxassetid://5003953441",
+        Grass        = "rbxassetid://9267183930",
+        GrassCorner  = "rbxassetid://151708391",
+        Sand         = "rbxassetid://9277770677",
+        Wood         = "rbxassetid://9359131807",
+        Snow         = "rbxassetid://5612862976",
+        Dirt         = "rbxassetid://152569532",
+        Glass        = "rbxassetid://152239003",
+        Ocean        = "rbxassetid://152572260",
+        DarkRock     = "rbxassetid://152572250",
+        Moss         = "rbxassetid://152239826",
+        Barn         = "rbxassetid://151695075",
+        Chain        = "rbxassetid://4722586771",
+        PlotWood     = "rbxassetid://152572250",
+        PlotSkin     = "rbxassetid://152240077",
+        PlotDarkPurp = "rbxassetid://151802104",
+        PlotDarkRed  = "rbxassetid://152527418",
+        FenceWood    = "rbxassetid://151776506",
+        PinkGrass    = "rbxassetid://151683222",
+        TrackMetal   = "rbxassetid://151776506",
+        WoodBeige    = "rbxassetid://152572161",
+    }
+
+    local NameKeywords = {
+        { keywords = { "trunk", "deadtree", "tree", "branch", "log" }, id = TexIds.Wood },
+        { keywords = { "flowerstem", "stem", "flower" }, id = TexIds.Grass },
+        { keywords = { "rock", "stone", "cobble", "brick" }, id = TexIds.Rock },
+        { keywords = { "grass", "lawn", "turf", "ground" }, id = TexIds.Grass },
+        { keywords = { "sand", "desert", "beach", "dune" }, id = TexIds.Sand },
+        { keywords = { "wood", "plank", "lumber" }, id = TexIds.Wood },
+        { keywords = { "snow", "ice", "glacier", "frost", "frozen" }, id = TexIds.Snow },
+        { keywords = { "dirt", "soil", "mud" }, id = TexIds.Dirt },
+        { keywords = { "glass", "window", "pane" }, id = TexIds.Glass },
+        { keywords = { "ocean", "water", "sea", "river", "lake" }, id = TexIds.Ocean },
+    }
+
+    local ParentKeywords = {
+        { keywords = { "deadtree", "tree" }, id = TexIds.Wood },
+        { keywords = { "flowerstem", "stem" }, id = TexIds.Grass },
+    }
+
+    local ColorMaterialOverrides = {
+        { color = Color3.fromRGB(202, 203, 209), material = Enum.Material.WoodPlanks, id = TexIds.Rock },
+        { color = Color3.fromRGB(105, 102, 92),  material = Enum.Material.WoodPlanks, id = TexIds.DarkRock },
+        { color = Color3.fromRGB(90, 79, 71),    material = Enum.Material.WoodPlanks, id = TexIds.DarkRock },
+        { color = Color3.fromRGB(175, 148, 131), material = Enum.Material.WoodPlanks, id = TexIds.WoodBeige },
+    }
+
+    local PathColorOverrides = {
+        { pathContains = { "Map", "FactoryIsland", "Chain" }, color = nil, material = nil, id = TexIds.Chain },
+        { pathContains = { "Plots" }, color = Color3.fromRGB(152, 118, 84), material = Enum.Material.WoodPlanks, id = TexIds.PlotWood },
+        { pathContains = { "Plots" }, color = Color3.fromRGB(255, 204, 153), material = Enum.Material.Plastic, id = TexIds.PlotSkin },
+        { pathContains = { "Plots" }, color = Color3.fromRGB(44, 16, 44), material = Enum.Material.Plastic, id = TexIds.PlotDarkPurp },
+        { pathContains = { "Plots" }, color = Color3.fromRGB(63, 0, 0), material = Enum.Material.Plastic, id = TexIds.PlotDarkRed },
+        { pathContains = { "Plots", "Plot5", "House" }, color = Color3.fromRGB(255, 130, 222), material = Enum.Material.Grass, id = TexIds.PinkGrass },
+        { pathContains = { "Map", "CaveMountain", "House" }, classFilter = "WedgePart", color = Color3.fromRGB(39, 70, 45), material = Enum.Material.Plastic, id = TexIds.Moss },
+        { pathContains = { "Map", "BarnHillArea", "Barn" }, color = Color3.fromRGB(148, 75, 75), material = Enum.Material.WoodPlanks, id = TexIds.Barn },
+        { pathContains = { "Map", "BarnHillArea", "Farm", "FencedWheatField", "HighTensileFence" }, color = Color3.fromRGB(115, 107, 103), material = Enum.Material.Wood, id = TexIds.FenceWood },
+        { pathContains = { "Map", "TrainTunnel", "TunnelTrainTracks", "TrackInvCom" }, color = Color3.fromRGB(99, 95, 98), material = Enum.Material.Metal, id = TexIds.TrackMetal },
+    }
+
+    local function ColorMatch(a, b, tol)
+        local t = tol or (10 / 255)
+        return math.abs(a.R - b.R) < t and math.abs(a.G - b.G) < t and math.abs(a.B - b.B) < t
+    end
+
+    local function GetFullPath(inst)
+        local parts = {}
+        local cur = inst
+        while cur do
+            table.insert(parts, 1, cur.Name)
+            cur = cur.Parent
+        end
+        return table.concat(parts, ".")
+    end
+
+    local function PathContainsAll(inst, keywords)
+        local path = GetFullPath(inst):lower()
+        for _, kw in ipairs(keywords) do
+            if not path:find(kw:lower(), 1, true) then return false end
+        end
+        return true
+    end
+
+    local function ResolveCornerWedge(inst)
+        if not inst:IsA("CornerWedgePart") then return nil, nil end
+        local nm = inst.Name:lower()
+        for _, kw in ipairs({ "grass", "lawn", "turf", "ground" }) do
+            if nm:find(kw) then return TexIds.GrassCorner end
+        end
+        return nil, nil
+    end
+
+    local function ResolveByPathColor(inst)
+        for _, ov in ipairs(PathColorOverrides) do
+            if PathContainsAll(inst, ov.pathContains) then
+                local classOk = (ov.classFilter == nil) or inst:IsA(ov.classFilter)
+                local colorOk = (ov.color == nil) or ColorMatch(inst.Color, ov.color)
+                local matOk   = (ov.material == nil) or (inst.Material == ov.material)
+                if classOk and colorOk and matOk then return ov.id end
+            end
+        end
+        return nil, nil
+    end
+
+    local function ResolveByColorMaterial(inst)
+        for _, ov in ipairs(ColorMaterialOverrides) do
+            if inst.Material == ov.material and ColorMatch(inst.Color, ov.color) then
+                return ov.id
+            end
+        end
+        return nil, nil
+    end
+
+    local function ResolveByParentModel(inst)
+        local parent = inst.Parent
+        local depth = 0
+        while parent and depth < 6 do
+            if parent:IsA("Model") or parent:IsA("Folder") then
+                local nm = parent.Name:lower()
+                for _, ov in ipairs(ParentKeywords) do
+                    for _, kw in ipairs(ov.keywords) do
+                        if nm:find(kw) then return ov.id end
+                    end
+                end
+            end
+            parent = parent.Parent
+            depth += 1
+        end
+        return nil, nil
+    end
+
+    local function ResolveByName(inst)
+        local nm = inst.Name:lower()
+        for _, ov in ipairs(NameKeywords) do
+            for _, kw in ipairs(ov.keywords) do
+                if nm:find(kw) then return ov.id end
+            end
+        end
+        return nil, nil
+    end
+
+    local function Resolve(inst)
+        local id = ResolveCornerWedge(inst)
+        if id then return id end
+        id = ResolveByPathColor(inst)
+        if id then return id end
+        id = ResolveByColorMaterial(inst)
+        if id then return id end
+        id = ResolveByParentModel(inst)
+        if id then return id end
+        return ResolveByName(inst)
+    end
+
+    local function ShouldSkipMCPart(inst)
+        local path = GetFullPath(inst):lower()
+        if inst.Name == "SNOWPART" then
+            local p = inst.Parent
+            if p and p:IsA("Model") and p.Name == "_PoophubSnowSystem" then return true end
+        end
+        for _, kw in ipairs({ "sky", "skybox", "cloud", "sun", "moon", "star" }) do
+            if path:find(kw, 1, true) then return true end
+        end
+        return false
+    end
+
+    local function PasteFace(parent, face, texture)
+        local t = Instance.new("Texture")
+        t.Texture = texture
+        t.Face = face
+        t.StudsPerTileU = MCState.mcTileSize
+        t.StudsPerTileV = MCState.mcTileSize
+        t.Parent = parent
+    end
+
+    local function ApplyAllFaces(inst, texture)
+        for _, face in ipairs({
+            Enum.NormalId.Top, Enum.NormalId.Bottom,
+            Enum.NormalId.Front, Enum.NormalId.Back,
+            Enum.NormalId.Left, Enum.NormalId.Right,
+        }) do
+            PasteFace(inst, face, texture)
+        end
+    end
+
+    local function ApplyMCTextures()
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            if inst:IsA("BasePart") and not inst:IsA("Terrain") then
+                if not ShouldSkipMCPart(inst) then
+                    local texId = Resolve(inst)
+                    if texId and texId ~= TexIds.Snow then
+                        if mcOriginalPartTextures[inst] == nil then
+                            local saved = {}
+                            for _, child in ipairs(inst:GetChildren()) do
+                                if child:IsA("Texture") or child:IsA("Decal") then
+                                    table.insert(saved, child:Clone())
+                                    child:Destroy()
+                                end
+                            end
+                            if #saved == 0 then saved = { "empty" } end
+                            mcOriginalPartTextures[inst] = saved
+                        else
+                            for _, child in ipairs(inst:GetChildren()) do
+                                if child:IsA("Texture") or child:IsA("Decal") then child:Destroy() end
+                            end
+                        end
+                        ApplyAllFaces(inst, texId)
+                    end
+                end
+            end
+        end
+    end
+
+    local function RestoreOriginalTextures()
+        for inst, saved in pairs(mcOriginalPartTextures) do
+            if inst and inst.Parent then
+                for _, child in ipairs(inst:GetChildren()) do
+                    if child:IsA("Texture") or child:IsA("Decal") then child:Destroy() end
+                end
+                for _, entry in ipairs(saved) do
+                    if entry ~= "empty" then entry:Clone().Parent = inst end
+                end
+            end
+        end
+        table.clear(mcOriginalPartTextures)
+    end
+
+    -- UI
+    local MCGroup = Tabs.VisualsTab:AddLeftGroupbox("Minecraft Textures", "box")
+
+    MCGroup:AddToggle("MCTexEnabled", {
+        Text = "Enable Minecraft Textures",
+        Default = false,
+        Callback = function(value)
+            MCState.mcTexturesEnabled = value
+            if value then
+                pcall(ApplyMCTextures)
+            else
+                pcall(RestoreOriginalTextures)
+            end
+        end,
+    })
+
+    MCGroup:AddSlider("MCTileSize", {
+        Text = "Studs Per Tile",
+        Default = 4, Min = 1, Max = 16, Rounding = 0, Suffix = " studs",
+        Callback = function(value)
+            MCState.mcTileSize = value
+            for _, inst in ipairs(Workspace:GetDescendants()) do
+                if inst:IsA("BasePart") then
+                    for _, child in ipairs(inst:GetChildren()) do
+                        if child:IsA("Texture") then
+                            child.StudsPerTileU = value
+                            child.StudsPerTileV = value
+                        end
+                    end
+                end
+            end
+        end,
+    })
+
+    MCGroup:AddDivider()
+
+    MCGroup:AddButton({
+        Text = "Re-Apply Textures",
+        Func = function()
+            if MCState.mcTexturesEnabled then
+                pcall(ApplyMCTextures)
+            end
+        end,
+    })
+
+    MCGroup:AddButton({
+        Text = "Restore Original Textures",
+        Func = function()
+            pcall(RestoreOriginalTextures)
+        end,
+    })
+end
 
 -- =====================================================
 -- Visuals: Black Hole Texture
