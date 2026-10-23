@@ -22,15 +22,15 @@ function Library:Notify(data)
     if type(data) ~= 'table' then
         data = { Description = tostring(data) }
     end
-    data.Title = data.Title or '<b>Clyrix v1.10.21</b>'
+    data.Title = data.Title or '<b>Clyrix v3.10.23</b>'
     data.BigIcon = data.BigIcon or 'rbxassetid://90655650898082'
     return OLD_NOTIFY(self, data)
 end
 
 local Window = Library:CreateWindow({
-    Title = '<b>Clyrix v2.10.22</b>',
+    Title = '<b>Clyrix v3.10.23</b>',
     Icon = '90655650898082',
-    Footer = 'project clyrix v2',
+    Footer = 'project clyrix v3',
     DisableSearch = false,
     EnableCompacting = true,
     SidebarCompacted = true,
@@ -477,22 +477,29 @@ do
     end)
 end
 -- =====================================================
--- Clyrix | FPS | Ping ウォーターマーク
+-- Clyrix v3 | 時刻 | FPS | Ping ウォーターマーク
 -- =====================================================
 do
     local Stats = game:GetService("Stats")
     local RunService = game:GetService("RunService")
 
-    local Watermark = Library:AddDraggableLabel("Clyrix v2.10.22 | 0 FPS | 0 ms")
+    local Watermark = Library:AddDraggableLabel("Clyrix v3 | --:--:-- | 0 FPS | 0 ms", "90655650898082")
 
     local acc = 0
     RunService.Heartbeat:Connect(function(dt)
         acc += dt
         if acc < 0.5 then return end
         acc = 0
+        
+        -- 現在時刻 (HH:MM:SS)
+        local currentTime = os.date("%H:%M:%S")
+        
+        -- FPS / Ping
         local fps = math.floor(Stats.Workspace.Heartbeat:GetValue())
         local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-        Watermark:SetText(("Clyrix v2.10.22 | %d FPS | %d ms"):format(fps, ping))
+        
+        -- 文字列を結合してセット
+        Watermark:SetText(("Clyrix v3 | %s | %d FPS | %d ms"):format(currentTime, fps, ping))
     end)
 end
 -- =====================================================
