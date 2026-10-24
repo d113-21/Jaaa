@@ -3587,15 +3587,65 @@ Config:AddDropdown("GTDropdown", { Values = { "Blobman", "Tractor [Invisible]", 
         elseif arg == "Sleigh [Invisible]" then tbl18.GucciType = "SantaSleigh" end
     end })
 Config:AddDivider("Anti Net-Owner")
-Config:AddDropdown("AITDropdown", { Values = {
+-- ▼ Config グループボックス作成より前に入れる ▼
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui        = game:GetService("StarterGui")
+
+local function NotifyAIT(title, text, duration)
+    StarterGui:SetCore("SendNotification", {
+        Title = title, Text = text, Duration = duration or 3,
+    })
+end
+
+local antiInputTypes = {
     "FoodHamburger", "InstrumentDrumBongos", "InstrumentBrassTrumpet", "InstrumentBrassBugle",
     "InstrumentVoiceMicrophone", "InstrumentWoodwindOcarina", "InstrumentGuitarUkulele",
     "InstrumentGuitarLyre", "InstrumentGuitarBanjo", "InstrumentGuitarAcoustic",
     "CupMugBrown", "CupMugWhite", "FoodBanana", "FoodBread", "FoodBroccoli",
     "FoodCakePink", "FoodCoconut", "FoodDippyEgg", "FoodDonut", "FoodFrenchFries",
     "FoodHotdog", "FoodMayonnaise", "FoodMeatStick", "FoodMushroomPoison",
-    "FoodPizzaCheese", "FoodPizzaPepperoni", "FoodSodaCan", "PoopPile", "PoopPileSparkle" },
-    Default = 1, Multi = false, Text = "Type", Callback = function(v) tbl18.AntiInputType = v end })
+    "FoodPizzaCheese", "FoodPizzaPepperoni", "FoodSodaCan", "PoopPile", "PoopPileSparkle",
+}
+
+local function BuildValueImages()
+    local valueImages = {}
+    local ok, err = pcall(function()
+        local menuToys   = ReplicatedStorage:WaitForChild("MenuToys", 10)
+        local dataModule = menuToys and menuToys:WaitForChild("MenuToysData", 10)
+        if not dataModule then error("MenuToysData が見つかりません") end
+        local data         = require(dataModule)
+        local allToysData  = data.GetMenuAllToysData() or {}
+        for _, name in ipairs(antiInputTypes) do
+            local entry = allToysData[name]
+            local img   = entry and entry.MediumResImage or ""
+            if img ~= "" then valueImages[name] = img end
+        end
+    end)
+    if not ok then
+        NotifyAIT("ValueImages", "取得失敗: " .. tostring(err), 4)
+    else
+        local c = 0 for _ in pairs(valueImages) do c = c + 1 end
+        NotifyAIT("ValueImages", ("%d / %d 件のIDを取得"):format(c, #antiInputTypes), 3)
+    end
+    return valueImages
+end
+-- ▲ ここまで ▲
+
+-- ▼ 元の Config:AddDropdown("AITDropdown", {...}) をこれに置換 ▼
+local ValueImages = BuildValueImages()
+
+Config:AddDropdown("AITDropdown", {
+    Values      = antiInputTypes,
+    ValueImages = ValueImages,
+    Default     = 1,
+    Multi       = false,
+    Text        = "Type",
+    Tooltip     = "What interactable item will you use when doing anti-Net Owner",
+    Callback    = function(antiInputType)
+        tbl18.AntiInputType = antiInputType
+    end,
+})
+-- ▲ 置換ここまで ▲
 Config:AddSlider("AntiInpLagDel", { Text = "Grab & Drop Delay", Default = 0.05, Min = 0, Max = 0.3,
     Prefix = "sec", Rounding = 2, Callback = function(v) tbl18.InputLgDelay = v end })
 Config:AddLabel("Below 0.05 can cause high ping")
