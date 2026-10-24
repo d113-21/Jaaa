@@ -52,6 +52,7 @@ local Tabs = {
     PlayerTab = Window:AddTab('Player Tab', 'user', 'player'),
     FunTab = Window:AddTab('Fun', 'gamepad-2', 'Funs'),
     DanceTab = Window:AddTab('Dance', 'music', 'Ragdoll Dances'),
+    ToyTab = Window:AddTab('Toy', 'shapes', 'Toy Settings'),
     DevTab = Window:AddTab('Dev', 'user-check', 'Dev Tab'),
     Settings = Window:AddTab('Settings', 'settings', 'setting mode'),
     UISettingsTab = Window:AddTab('UI Settings', 'sliders', 'Config & Theme'),
@@ -10493,6 +10494,410 @@ do
         end
     end)
 end
+
+-- =====================================================
+-- Toy タブ: Wing Master
+-- =====================================================
+local toyOK, toyErr = pcall(function()
+    local ToyPlayers     = game:GetService("Players")
+    local ToyRunService  = game:GetService("RunService")
+    local ToyWorkspace   = game:GetService("Workspace")
+    local ToyLocalPlayer = ToyPlayers.LocalPlayer
+
+    local function ToyNotify(title, text, duration)
+        Library:Notify({Title = title, Description = text, Time = duration or 3})
+    end
+
+    -- ============================================================
+    -- WingMaster Logic
+    -- ============================================================
+    local WingMaster = {}
+    WingMaster.isActive       = false
+    WingMaster.SelectedItem   = "TetracubeI"
+    WingMaster.SearchMode     = "My Toys"
+
+    -- Flapping
+    WingMaster.WingSpeed      = 2
+    WingMaster.WingAngle      = 30
+    WingMaster.FlapMultiplier = 1.0
+
+    -- Position / Rotation
+    WingMaster.OffsetX        = 4.125
+    WingMaster.OffsetY        = 0
+    WingMaster.OffsetZ        = 1
+    WingMaster.BaseRotation   = 0
+    WingMaster.BaseTiltX      = 0
+
+    -- Physics
+    WingMaster.PhysicsP       = 15000
+    WingMaster.PhysicsD       = 200
+
+    -- Fixed
+    WingMaster.WingLength     = 5
+    WingMaster.SyncWeight     = 0.5
+
+    WingMaster.TimeCounter    = 0
+    WingMaster.Wings          = {}
+    WingMaster.RunConnection  = nil
+
+    local function GetWingOffsets()
+        local ry = math.rad(WingMaster.BaseRotation)
+        local tx = math.rad(WingMaster.BaseTiltX)
+        return {
+            CFrame.new(-WingMaster.OffsetX, WingMaster.OffsetY, WingMaster.OffsetZ) * CFrame.Angles(tx, ry, 0),
+            CFrame.new( WingMaster.OffsetX, WingMaster.OffsetY, WingMaster.OffsetZ) * CFrame.Angles(tx, -ry, 0),
+        }
+    end
+
+    local function GetToyFolders()
+        local folders = {}
+        if WingMaster.SearchMode == "My Toys" or WingMaster.SearchMode == "All Toys" then
+            local myFolder = ToyWorkspace:FindFirstChild(ToyLocalPlayer.Name .. "SpawnedInToys")
+            if myFolder then table.insert(folders, myFolder) end
+        end
+        if WingMaster.SearchMode == "Plot Toys" or WingMaster.SearchMode == "All Toys" then
+            local plotsFolder = ToyWorkspace:FindFirstChild("Plots")
+            if plotsFolder then
+                for i = 1, 5 do
+                    local plot = plotsFolder:FindFirstChild("Plot" .. i)
+                    if plot then
+                        local ownersFolder = plot:FindFirstChild("PlotSign") and plot.PlotSign:FindFirstChild("ThisPlotsOwners")
+                        if ownersFolder then
+                            for _, v in ipairs(ownersFolder:GetChildren()) do
+                                if v:IsA("ValueBase") and v.Value == ToyLocalPlayer.Name then
+                                    local plotItemsFolder = ToyWorkspace:FindFirstChild("PlotItems")
+                                    if plotItemsFolder and plotItemsFolder:FindFirstChild(plot.Name) then
+                                        table.insert(folders, plotItemsFolder:FindFirstChild(plot.Name))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return folders
+    end
+
+    local function StripPhysicsFromToys()
+        local folders = GetToyFolders()
+        for _, folder in ipairs(folders) do
+            for _, obj in ipairs(folder:GetDescendants()) do
+                if obj:IsA("BasePart") then
+                    for _, child in ipairs(obj:GetChildren()) do
+                        if child:IsA("BodyPosition") or child:IsA("BodyGyro") then
+                            pcall(function() child:Destroy() end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local function CleanupWings(dropToys)
+        for _, w in pairs(WingMaster.Wings) do
+            if w.Handle and w.Handle.Parent then
+                pcall(function() w.Handle:Destroy() end)
+            end
+            for _, s in pairs(w.Segments or {}) do
+                if s.Part and s.Part.Parent then
+                    pcall(function() s.Part:Destroy() end)
+                end
+            end
+            if dropToys then
+                local function strip(entry)
+                    if entry then
+                        if entry.BP then pcall(function() entry.BP:Destroy() end) end
+                        if entry.BG then pcall(function() entry.BG:Destroy() end) end
+                    end
+                end
+                strip(w.Reserved)
+                for _, sync in pairs(w.Sync or {}) do
+                    strip(sync)
+                end
+            end
+        end
+        WingMaster.Wings = {}
+        if WingMaster.RunConnection then
+            pcall(function() WingMaster.RunConnection:Disconnect() end)
+            WingMaster.RunConnection = nil
+        end
+        if dropToys then
+            pcall(StripPhysicsFromToys)
+        end
+    end
+
+    local function SetupPhysics(part)
+        local BP = part:FindFirstChildOfClass("BodyPosition") or Instance.new("BodyPosition")
+        local BG = part:FindFirstChildOfClass("BodyGyro") or Instance.new("BodyGyro")
+        BP.P = WingMaster.PhysicsP
+        BP.D = WingMaster.PhysicsD
+        BP.MaxForce = Vector3.new(1, 1, 1) * 1e10
+        BP.Parent = part
+        BG.P = WingMaster.PhysicsP
+        BG.D = WingMaster.PhysicsD
+        BG.MaxTorque = Vector3.new(1, 1, 1) * 1e10
+        BG.Parent = part
+        return BG, BP
+    end
+
+    local function BuildWings()
+        CleanupWings(false)
+        local folders = GetToyFolders()
+        local found = {}
+        for _, folder in ipairs(folders) do
+            for _, x in ipairs(folder:GetDescendants()) do
+                if x:IsA("Model") and x.Name == WingMaster.SelectedItem then
+                    table.insert(found, x)
+                end
+            end
+        end
+
+        if #found == 0 then
+            ToyNotify("Wing Master", "Target item not found", 3)
+            return false
+        end
+
+        for i = 1, 2 do
+            local Segments = {}
+            for x = 1, WingMaster.WingLength do
+                local p = Instance.new("Part")
+                p.CanCollide = false; p.Anchored = true; p.Transparency = 1
+                p.Size = Vector3.new(4, 1, 4)
+                p.Parent = ToyWorkspace
+                Segments[#Segments + 1] = { Part = p }
+            end
+            local h = Instance.new("Part")
+            h.CanCollide = false; h.Anchored = true; h.Transparency = 1
+            h.Size = Vector3.new(4, 1, 4)
+            h.Parent = ToyWorkspace
+            WingMaster.Wings[#WingMaster.Wings + 1] = {
+                Handle = h, Segments = Segments, Sync = {}, Reserved = nil,
+            }
+        end
+
+        for i, v in ipairs(found) do
+            local Side = (i <= (#found / 2)) and 1 or 2
+            local Pallet = v:FindFirstChild("SoundPart") or v:FindFirstChild("Handle") or v:FindFirstChildWhichIsA("BasePart")
+            if Pallet then
+                for _, child in pairs(v:GetChildren()) do
+                    if child:IsA("BasePart") then child.CanCollide = false end
+                end
+                local BG, BP = SetupPhysics(Pallet)
+                if not WingMaster.Wings[Side].Reserved then
+                    WingMaster.Wings[Side].Reserved = { BG = BG, BP = BP }
+                else
+                    table.insert(WingMaster.Wings[Side].Sync, { BG = BG, BP = BP })
+                end
+            end
+        end
+        return true
+    end
+
+    local function StartWingAnimation()
+        if WingMaster.RunConnection then
+            pcall(function() WingMaster.RunConnection:Disconnect() end)
+        end
+        WingMaster.RunConnection = ToyRunService.RenderStepped:Connect(function(dt)
+            if not WingMaster.isActive or #WingMaster.Wings == 0 then return end
+            local char = ToyLocalPlayer.Character
+            if not char or not char:FindFirstChild("Torso") then return end
+
+            local torso = char.Torso
+            local hrp   = char:FindFirstChild("HumanoidRootPart")
+            local vel   = hrp and hrp.Velocity.Magnitude or 0
+
+            WingMaster.TimeCounter = WingMaster.TimeCounter + dt * (WingMaster.WingSpeed + vel / 40) * WingMaster.FlapMultiplier
+            local offsets = GetWingOffsets()
+
+            for i, Wing in ipairs(WingMaster.Wings) do
+                local direction = (i == 1) and 1 or -1
+                local flap = math.sin(WingMaster.TimeCounter) * math.rad(WingMaster.WingAngle + vel / 4) * direction
+
+                Wing.Handle.CFrame = torso.CFrame * offsets[i] * CFrame.Angles(0, 0, flap)
+
+                if Wing.Reserved then
+                    pcall(function()
+                        Wing.Reserved.BP.P = WingMaster.PhysicsP
+                        Wing.Reserved.BG.P = WingMaster.PhysicsP
+                        Wing.Reserved.BP.Position = Wing.Handle.Position
+                        Wing.Reserved.BG.CFrame = Wing.Handle.CFrame * CFrame.Angles(math.rad(90), 0, math.rad(90))
+                    end)
+                end
+
+                for Index, Segment in ipairs(Wing.Segments) do
+                    local ToFollow = (Index == 1) and Wing.Handle.CFrame or Wing.Segments[Index - 1].Part.CFrame
+                    Segment.Part.CFrame = Segment.Part.CFrame:Lerp(ToFollow * offsets[i], WingMaster.SyncWeight)
+                    if Wing.Sync[Index] then
+                        pcall(function()
+                            Wing.Sync[Index].BP.P = WingMaster.PhysicsP
+                            Wing.Sync[Index].BG.P = WingMaster.PhysicsP
+                            Wing.Sync[Index].BP.Position = Segment.Part.Position
+                            Wing.Sync[Index].BG.CFrame = Segment.Part.CFrame * CFrame.Angles(math.rad(90), 0, math.rad(90))
+                        end)
+                    end
+                end
+            end
+        end)
+    end
+
+    local function ToggleWingMaster(enabled)
+        if enabled then
+            if BuildWings() then
+                WingMaster.isActive = true
+                StartWingAnimation()
+                ToyNotify("Wing Master", "Activated", 3)
+            else
+                WingMaster.isActive = false
+            end
+        else
+            WingMaster.isActive = false
+            CleanupWings(true)
+            ToyNotify("Wing Master", "Deactivated (toys dropped)", 3)
+        end
+    end
+
+    ToyLocalPlayer.CharacterAdded:Connect(function()
+        if WingMaster.isActive then
+            task.defer(function()
+                if WingMaster.isActive then pcall(BuildWings) end
+            end)
+        end
+    end)
+
+    -- ============================================================
+    -- UI Setup
+    -- ============================================================
+    local WingTypeGroup = Tabs.ToyTab:AddLeftGroupbox("Wing type setting", "settings")
+    local WingGroup = Tabs.ToyTab:AddRightGroupbox("Wing", "wind")
+
+    -- 左側: 設定系 (スライダー・ドロップダウン)
+    WingTypeGroup:AddDropdown("WingItem", {
+        Text = "Select Item",
+        Values = { "TetracubeI", "FireworkSparkler", "PoopPile", "BallSnowball", "CreatureBlobman" },
+        Default = "TetracubeI",
+        Callback = function(v)
+            WingMaster.SelectedItem = v
+            if WingMaster.isActive then pcall(BuildWings) end
+        end,
+    })
+
+    WingTypeGroup:AddDropdown("WingSearch", {
+        Text = "Search Range",
+        Values = { "My Toys", "Plot Toys", "All Toys" },
+        Default = "My Toys",
+        Callback = function(v)
+            WingMaster.SearchMode = v
+            if WingMaster.isActive then pcall(BuildWings) end
+        end,
+    })
+
+    WingTypeGroup:AddDivider("Flapping")
+    WingTypeGroup:AddSlider("WingSpeed", {
+        Text = "Wing Speed", Default = 2, Min = 1, Max = 20, Rounding = 0, Suffix = "x",
+        Callback = function(v) WingMaster.WingSpeed = v end,
+    })
+    WingTypeGroup:AddSlider("WingAngle", {
+        Text = "Wing Angle", Default = 30, Min = 0, Max = 120, Rounding = 0, Suffix = "deg",
+        Callback = function(v) WingMaster.WingAngle = v end,
+    })
+    WingTypeGroup:AddSlider("FlapMultiplier", {
+        Text = "Flap Multiplier", Default = 1, Min = 0.1, Max = 5, Rounding = 1, Suffix = "x",
+        Callback = function(v) WingMaster.FlapMultiplier = v end,
+    })
+
+    WingTypeGroup:AddDivider("Position / Rotation")
+    WingTypeGroup:AddSlider("OffsetX", {
+        Text = "Offset X", Default = 4.125, Min = 0, Max = 15, Rounding = 1,
+        Callback = function(v) WingMaster.OffsetX = v end,
+    })
+    WingTypeGroup:AddSlider("OffsetY", {
+        Text = "Offset Y", Default = 0, Min = -5, Max = 5, Rounding = 1,
+        Callback = function(v) WingMaster.OffsetY = v end,
+    })
+    WingTypeGroup:AddSlider("OffsetZ", {
+        Text = "Offset Z", Default = 1, Min = -5, Max = 5, Rounding = 1,
+        Callback = function(v) WingMaster.OffsetZ = v end,
+    })
+    WingTypeGroup:AddSlider("BaseRotation", {
+        Text = "Base Rotation", Default = 0, Min = -180, Max = 180, Rounding = 0, Suffix = "deg",
+        Callback = function(v) WingMaster.BaseRotation = v end,
+    })
+    WingTypeGroup:AddSlider("BaseTiltX", {
+        Text = "Base Tilt X", Default = 0, Min = -90, Max = 90, Rounding = 0, Suffix = "deg",
+        Callback = function(v) WingMaster.BaseTiltX = v end,
+    })
+
+    WingTypeGroup:AddDivider("Physics")
+    WingTypeGroup:AddSlider("PhysicsP", {
+        Text = "Physics P", Default = 15000, Min = 100, Max = 100000, Rounding = 0,
+        Callback = function(v) WingMaster.PhysicsP = v end,
+    })
+    WingTypeGroup:AddSlider("PhysicsD", {
+        Text = "Physics D", Default = 200, Min = 0, Max = 5000, Rounding = 0,
+        Callback = function(v) WingMaster.PhysicsD = v end,
+    })
+
+    -- 右側: トグル・ボタン
+    WingGroup:AddToggle("WingMasterToggle", {
+        Text = "Enable Wings",
+        Default = false,
+        Callback = function(state)
+            ToggleWingMaster(state)
+        end,
+    })
+
+    WingGroup:AddButton({
+        Text = "Rebuild Wings",
+        Func = function()
+            if WingMaster.isActive then
+                BuildWings()
+                ToyNotify("Wing Master", "Wings rebuilt", 2)
+            else
+                ToyNotify("Wing Master", "Enable Wings first", 2)
+            end
+        end,
+    })
+
+    WingGroup:AddButton({
+        Text = "Reset All Settings",
+        Func = function()
+            -- 内部変数のリセット
+            WingMaster.WingSpeed      = 2
+            WingMaster.WingAngle      = 30
+            WingMaster.FlapMultiplier = 1.0
+            WingMaster.OffsetX        = 4.125
+            WingMaster.OffsetY        = 0
+            WingMaster.OffsetZ        = 1
+            WingMaster.BaseRotation   = 0
+            WingMaster.BaseTiltX      = 0
+            WingMaster.PhysicsP       = 15000
+            WingMaster.PhysicsD       = 200
+
+            -- UIスライダーの値も同期してリセット
+            pcall(function()
+                if Options.WingSpeed then Options.WingSpeed:SetValue(2) end
+                if Options.WingAngle then Options.WingAngle:SetValue(30) end
+                if Options.FlapMultiplier then Options.FlapMultiplier:SetValue(1) end
+                if Options.OffsetX then Options.OffsetX:SetValue(4.125) end
+                if Options.OffsetY then Options.OffsetY:SetValue(0) end
+                if Options.OffsetZ then Options.OffsetZ:SetValue(1) end
+                if Options.BaseRotation then Options.BaseRotation:SetValue(0) end
+                if Options.BaseTiltX then Options.BaseTiltX:SetValue(0) end
+                if Options.PhysicsP then Options.PhysicsP:SetValue(15000) end
+                if Options.PhysicsD then Options.PhysicsD:SetValue(200) end
+            end)
+
+            if WingMaster.isActive then pcall(BuildWings) end
+            ToyNotify("Wing Master", "Settings reset", 2)
+        end,
+    })
+end)
+
+if not toyOK then
+    warn("[Clyrix] Toy init error: " .. tostring(toyErr))
+end
+
 -- =====================================================
 -- Dev タブ: Developer Info
 -- =====================================================
