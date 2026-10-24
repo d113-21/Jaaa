@@ -51,6 +51,7 @@ local Tabs = {
     VisualsTab = Window:AddTab('Visual', 'eye', 'Visual Tab'),
     PlayerTab = Window:AddTab('Player Tab', 'user', 'player'),
     FunTab = Window:AddTab('Fun', 'gamepad-2', 'Funs'),
+    DanceTab = Window:AddTab('Dance', 'music', 'Ragdoll Dances'),
     DevTab = Window:AddTab('Dev', 'user-check', 'Dev Tab'),
     Settings = Window:AddTab('Settings', 'settings', 'setting mode'),
     UISettingsTab = Window:AddTab('UI Settings', 'sliders', 'Config & Theme'),
@@ -9236,7 +9237,1262 @@ end) -- pcall end
 if not funOK then
     warn("[Clyrix] Fun init error: " .. tostring(funErr))
 end
+-- =====================================================
+-- Dance タブ: Ragdoll Dance v1 / v2
+-- =====================================================
+do
+    local HttpService = game:GetService("HttpService")
+    
+    local function DanceNotify(title, text, duration)
+        Library:Notify({Title = title, Description = text, Time = duration or 3})
+    end
 
+    local ce = ReplicatedStorage:WaitForChild("CharacterEvents", 10)
+    local RagdollRemote = ce and ce:WaitForChild("RagdollRemote", 10)
+
+    -- ============================================================
+    -- Ragdoll Dance v1
+    -- ============================================================
+    local DanceV1 = {}
+    DanceV1.Players           = Players
+    DanceV1.RunService        = RunService
+    DanceV1.ReplicatedStorage = ReplicatedStorage
+    DanceV1.me                = LocalPlayer
+    DanceV1.camera            = workspace.CurrentCamera
+    DanceV1.RagdollRemote     = RagdollRemote
+    DanceV1.poseConnection    = nil
+    DanceV1.activeMode        = "off"
+    DanceV1.selectedDance     = "Floss Dance"
+
+    DanceV1.danceNames = {
+        "Floss Dance","Ouen Dance","Head Ball","Cartoon","Kawaii","Cool","Spider",
+        "Robot Lock","Disco Point","Wave Ripple","Jazz Hands","Headbang",
+        "Shoulder Shimmy","Boxer Bounce","Salsa Hip","Cheer Jump","Propeller Arms",
+        "Matrix Lean","Victory Pump","Ninja Flow","Superhero Pose","Snake Wave",
+        "Staircase Step","Windmill Arms","Popcorn Pop","Clap Along","Zombie Shuffle",
+        "Koshi huri","Head dribble","Angry","soccer","Head orbit","Lol",
+    }
+
+    DanceV1.stopPose = function()
+        if DanceV1.poseConnection then
+            pcall(function() DanceV1.poseConnection:Disconnect() end)
+            DanceV1.poseConnection = nil
+        end
+        DanceV1.activeMode = "off"
+    end
+
+    DanceV1.startRagdollOnly = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local offsets = {
+            Torso = CFrame.new(0,0,0), Head = CFrame.new(0,1.5,0),
+            ["Left Arm"] = CFrame.new(-1.5,0,0), ["Right Arm"] = CFrame.new(1.5,0,0),
+            ["Left Leg"] = CFrame.new(-0.5,-2,0), ["Right Leg"] = CFrame.new(0.5,-2,0),
+        }
+        DanceV1.activeMode = "ragdoll"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function()
+            if not arg or not arg.Parent or not rootPart or not rootPart.Parent then DanceV1.stopPose() return end
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local target = CFrame.new(rootPart.Position) * CFrame.Angles(0, yaw, 0)
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = rootPart.AssemblyLinearVelocity
+                end
+            end
+        end)
+    end
+
+    DanceV1.startFlossDance = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            local t = tick()
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = t * 10
+            local armSideAngle = 0.95993108859688125 * math.sin(phase)
+            local leftArmZ = 0.9 * math.cos(phase)
+            local rightArmZ = -0.9 * math.cos(phase)
+            local hipTwist = -0.3490658503988659 * math.sin(phase)
+            local torsoTwist = -0.24434609527920614 * math.sin(phase)
+            local kneeBounce = 0.12 * math.abs(math.sin(phase * 2))
+            local offsets = {
+                Torso = CFrame.new(0,-kneeBounce,0) * CFrame.Angles(0, torsoTwist, 0),
+                Head = CFrame.new(0,1.5-kneeBounce,0),
+                ["Left Arm"] = CFrame.new(-1.5,1-kneeBounce,leftArmZ) * CFrame.Angles(0,0,armSideAngle) * CFrame.new(0,-1,0),
+                ["Right Arm"] = CFrame.new(1.5,1-kneeBounce,rightArmZ) * CFrame.Angles(0,0,armSideAngle) * CFrame.new(0,-1,0),
+                ["Left Leg"] = CFrame.new(-100,-2+kneeBounce*0.5,0) * CFrame.Angles(0,hipTwist*0.4,0),
+                ["Right Leg"] = CFrame.new(100,-2+kneeBounce*0.5,0) * CFrame.Angles(0,hipTwist*0.4,0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startOrangeJustice = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            local t = tick()
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = t * 8
+            local armAngle = 0.78539816339744828 * math.sin(phase * 2)
+            local armUp = math.sin(phase * 2) * 1.5
+            local legLift = math.sin(phase) * 0.8
+            local jumpBounce = math.abs(math.sin(phase * 2)) * 0.3
+            local offsets = {
+                Torso = CFrame.new(0,jumpBounce,0),
+                Head = CFrame.new(0,1.5,0),
+                ["Left Arm"] = CFrame.new(-1.5,1+armUp,0) * CFrame.Angles(armAngle,0,0),
+                ["Right Arm"] = CFrame.new(1.5,1-armUp,0) * CFrame.Angles(-armAngle,0,0),
+                ["Left Leg"] = CFrame.new(-0.5,-2+legLift,0),
+                ["Right Leg"] = CFrame.new(0.5,-2-legLift,0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.isThrowing = false
+    DanceV1.throwProgress = 0
+    DanceV1.headStartPos = nil
+
+    DanceV1.startHeadThrow = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        local head = arg:FindFirstChild("Head")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        DanceV1.isThrowing = false
+        DanceV1.throwProgress = 0
+        DanceV1.headStartPos = nil
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            if not DanceV1.isThrowing then
+                DanceV1.throwProgress = DanceV1.throwProgress + dt * 1.5
+                if DanceV1.throwProgress >= 1 then
+                    DanceV1.isThrowing = true
+                    DanceV1.throwProgress = 0
+                    if head then DanceV1.headStartPos = head.Position end
+                end
+            else
+                DanceV1.throwProgress = DanceV1.throwProgress + dt * 4
+                if DanceV1.throwProgress >= 1 then
+                    DanceV1.isThrowing = false
+                    DanceV1.throwProgress = 0
+                    if head then
+                        head.CFrame = target * CFrame.new(0,1.5,0)
+                        head.AssemblyLinearVelocity = Vector3.zero
+                    end
+                end
+            end
+            local armAngle, armPosition, headOffset, bodyLean = 0, 0, 0, 0
+            if not DanceV1.isThrowing then
+                local s = DanceV1.throwProgress * DanceV1.throwProgress * (3 - 2*DanceV1.throwProgress)
+                armAngle = -2.0943951023931953 * s
+                armPosition = s * 0.8
+                headOffset = s * 0.5
+                bodyLean = 0.26179938779914941 * s
+            else
+                local s = DanceV1.throwProgress * DanceV1.throwProgress * (3 - 2*DanceV1.throwProgress)
+                armAngle = -2.0943951023931953 + math.pi * s
+                armPosition = 0.8 - s * 1.5
+                headOffset = 0.5
+                bodyLean = 0.26179938779914941 - 0.52359877559829882 * s
+            end
+            local offsets = {
+                Torso = CFrame.new(0,0,0) * CFrame.Angles(bodyLean,0,0),
+                Head = CFrame.new(0,1.5+headOffset,0),
+                ["Left Arm"] = CFrame.new(-1.5,1,0) * CFrame.Angles(armAngle,0,0.17453292519943295) * CFrame.new(0,-1+armPosition,0),
+                ["Right Arm"] = CFrame.new(1.5,1,0) * CFrame.Angles(armAngle,0,-0.17453292519943295) * CFrame.new(0,-1+armPosition,0),
+                ["Left Leg"] = CFrame.new(-0.5,-2,0),
+                ["Right Leg"] = CFrame.new(0.5,-2,0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") and part ~= head then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+            if head and DanceV1.isThrowing then
+                local sp = DanceV1.headStartPos or (target * CFrame.new(0,1.5,0)).Position
+                local tp = sp + target.LookVector * 200 * DanceV1.throwProgress * DanceV1.throwProgress
+                head.CFrame = CFrame.new(tp)
+                head.AssemblyLinearVelocity = Vector3.zero
+            end
+        end)
+    end
+
+    DanceV1.startCartoon = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            local t = tick()
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = t * 8
+            local jumpHeight = math.abs(math.sin(phase)) * 1.2
+            local legLift = math.sin(phase) * 1.8
+            local legLift2 = math.sin(phase + math.pi) * 1.8
+            local armFlap = math.sin(phase * 1.5) * 1.5
+            local bodyTwist = math.sin(phase * 2) * 0.8
+            local headWobble = math.sin(phase * 2) * 0.3
+            local n = -2 + jumpHeight * 0.6
+            local offsets = {
+                Torso = CFrame.new(math.sin(phase)*0.1, n, 0) * CFrame.Angles(0, math.rad(bodyTwist*40), math.rad(math.sin(phase*2)*15)),
+                Head = CFrame.new(headWobble*0.2, 1.5+jumpHeight+math.sin(phase*2)*0.1, 0) * CFrame.Angles(math.rad(math.sin(phase*1.5)*20), 0, math.rad(headWobble*30)),
+                ["Left Arm"] = CFrame.new(-1.5+math.sin(phase)*0.3, 1+jumpHeight*0.5+math.sin(phase*2)*0.2, math.sin(phase)*0.5) * CFrame.Angles(n, math.rad(math.sin(phase*1.5)*30), math.rad(armFlap*40)) * CFrame.new(0,-0.5,0),
+                ["Right Arm"] = CFrame.new(1.5+math.sin(phase+math.pi)*0.3, 1+jumpHeight*0.5+math.sin(phase*2+math.pi)*0.2, math.sin(phase+math.pi)*0.5) * CFrame.Angles(n, math.rad(math.sin(phase*1.5+math.pi)*30), math.rad(-armFlap*40)) * CFrame.new(0,-0.5,0),
+                ["Left Leg"] = CFrame.new(-0.3+math.sin(phase)*0.1, n, math.sin(phase)*0.3) * CFrame.Angles(-1.0471975511965976+legLift*0.8, 0, math.rad(legLift*30)),
+                ["Right Leg"] = CFrame.new(0.3+math.sin(phase+math.pi)*0.1, n, math.sin(phase+math.pi)*0.3) * CFrame.Angles(-1.0471975511965976+legLift2*0.8, 0, math.rad(-legLift2*30)),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startKawaii = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            local t = tick()
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = t * 5
+            local bounce = math.abs(math.sin(phase)) * 0.15
+            local sway = math.sin(phase * 1.5) * 0.3
+            local armFold = 0.5 + math.sin(phase*1.5) * 0.1
+            local armFold2 = 0.5 + math.sin(phase*1.5+math.pi) * 0.1
+            local armForward = 0.3 + math.abs(math.sin(phase*1.5)) * 0.2
+            local headTilt = math.sin(phase*1.5) * 5
+            local legIn = 0.1
+            local n = -headTilt * 1.5
+            local offsets = {
+                Torso = CFrame.new(sway*0.1, bounce, 0) * CFrame.Angles(0,0,math.rad(sway*15)),
+                Head = CFrame.new(0, 1.5+bounce, 0) * CFrame.Angles(math.rad(headTilt),0,math.rad(n)),
+                ["Left Arm"] = CFrame.new(-1.2, 1+bounce*0.5, armForward) * CFrame.Angles(math.rad(-30-armFold*20), 0.26179938779914941, 0.3490658503988659) * CFrame.new(0,-0.3,0),
+                ["Right Arm"] = CFrame.new(1.2, 1+bounce*0.5, armForward) * CFrame.Angles(math.rad(-30-armFold2*20), -0.26179938779914941, -0.3490658503988659) * CFrame.new(0,-0.3,0),
+                ["Left Leg"] = CFrame.new(-0.3+legIn, -2+bounce*0.5, 0) * CFrame.Angles(-0.087266462599716474, 0.087266462599716474, 0.13962634015954636),
+                ["Right Leg"] = CFrame.new(0.3-legIn, -2+bounce*0.5, 0) * CFrame.Angles(-0.087266462599716474, -0.087266462599716474, -0.13962634015954636),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startCool = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local offsets = {
+                Torso = CFrame.new(0,0,0), Head = CFrame.new(0,1.5,0),
+                ["Left Arm"] = CFrame.new(-0.2,-0.5,-2) * CFrame.Angles(-1.3962634015954636,-0.17453292519943295,0.17453292519943295) * CFrame.new(0,-0.8,0),
+                ["Left Leg"] = CFrame.new(-0.5,-2,0),
+                ["Right Leg"] = CFrame.new(0.5,-2,0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startSpider = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        local stepCycle = 0
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then
+                movePos = movePos + md * walkSpeed * dt
+                stepCycle = stepCycle + dt * walkSpeed * 0.5
+            else
+                stepCycle = stepCycle + dt * 2
+            end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = stepCycle
+            local stepSmooth = math.sin(phase)
+            local footLift = math.max(0, math.sin(phase)) * 0.6
+            local footLift2 = math.max(0, math.sin(phase + math.pi)) * 0.6
+            local legForward = math.sin(phase) * 0.5
+            local legForward2 = math.sin(phase + math.pi) * 0.5
+            local armForward = math.sin(phase + math.pi) * 0.5
+            local armForward2 = math.sin(phase) * 0.5
+            local bodySway = math.sin(phase*2) * 0.03
+            local bodyBounce = math.abs(math.sin(phase*2)) * 0.08
+            local headBob = math.sin(phase*2) * 0.02
+            local n = -0.52359877559829882 + stepSmooth * 0.5
+            local offsets = {
+                Torso = CFrame.new(bodySway, -0.6+bodyBounce, 0) * CFrame.Angles(1.4835298641951802, 0, math.rad(bodySway*20)),
+                Head = CFrame.new(0, 0.6-bodyBounce+headBob, 0.7),
+                ["Left Arm"] = CFrame.new(-0.5,-0.2,armForward) * CFrame.Angles(n,0,math.rad(-60+math.sin(phase)*10)) * CFrame.new(0,-0.8-footLift,0),
+                ["Right Arm"] = CFrame.new(0.5,-0.2,armForward2) * CFrame.Angles(n,0,math.rad(60-math.sin(phase)*10)) * CFrame.new(0,-0.8-footLift2,0),
+                ["Left Leg"] = CFrame.new(-0.35,-0.2,legForward) * CFrame.Angles(n,0,math.rad(-50+math.cos(phase)*8)) * CFrame.new(0,-0.8-footLift2,0),
+                ["Right Leg"] = CFrame.new(0.35,-0.2,legForward2) * CFrame.Angles(n,0,math.rad(50-math.cos(phase)*8)) * CFrame.new(0,-0.8-footLift,0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startKoshiHuri = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        local koshiTime = 0
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            koshiTime = koshiTime + dt
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = koshiTime * 5
+            local hipX = math.sin(phase) * 0.5
+            local hipZ = math.cos(phase) * 0.3
+            local hipBounce = math.abs(math.sin(phase*2)) * 0.2
+            local bodyTiltZ = math.rad(math.sin(phase) * 15)
+            local bodyTiltX = math.rad(5 + math.cos(phase)*5)
+            local armSway = math.sin(phase) * 0.3
+            local kneeBend = math.abs(math.sin(phase*2)) * 0.2
+            local n = -bodyTiltZ * 0.5
+            local offsets = {
+                Torso = CFrame.new(hipX, hipBounce, hipZ) * CFrame.Angles(bodyTiltX, 0, bodyTiltZ),
+                Head = CFrame.new(-hipX*0.8, 1.5+hipBounce, -hipZ*0.5) * CFrame.Angles(-0.087266462599716474, math.rad(-hipX*20), math.rad(n)),
+                ["Left Arm"] = CFrame.new(-1.2+armSway, 1.3+hipBounce, -1.5) * CFrame.Angles(-2.2689280275926285,-0.3490658503988659,1.0471975511965976) * CFrame.new(0,-0.6,0),
+                ["Right Arm"] = CFrame.new(1.2-armSway, 1.3+hipBounce, -1.5) * CFrame.Angles(-2.2689280275926285,0.3490658503988659,-1.0471975511965976) * CFrame.new(0,-0.6,0),
+                ["Left Leg"] = CFrame.new(-0.5+hipX*0.3, -2+kneeBend*0.3, hipZ*0.3) * CFrame.Angles(math.rad(-kneeBend*20), math.rad(hipX*10), 0),
+                ["Right Leg"] = CFrame.new(0.5+hipX*0.3, -2+kneeBend*0.3, -hipZ*0.3) * CFrame.Angles(math.rad(-kneeBend*20), math.rad(-hipX*10), 0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startHeadDribble = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        local head = arg:FindFirstChild("Head")
+        if not head then return end
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        local dribbleTime = 0
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            dribbleTime = dribbleTime + dt
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = dribbleTime * 6
+            local handUpDown = math.sin(phase) * 1.5
+            local rightHandOffset = CFrame.new(1.5, 0.8+handUpDown, -0.5) * CFrame.Angles(math.rad(-80+math.sin(phase)*40), 0, -0.26179938779914941) * CFrame.new(0,-1,0)
+            local rightHandWorld = target * rightHandOffset
+            local bounceHeight = 0.5 + math.abs(math.sin(phase)) * 2
+            local headWorldPos = rightHandWorld.Position + Vector3.new(0, bounceHeight, 0)
+            local headLookAt = CFrame.new(headWorldPos, headWorldPos + look)
+            local headRotation = headLookAt * CFrame.Angles(math.sin(phase)*0.4, dribbleTime*2, 0)
+            local offsets = {
+                Torso = CFrame.new(0,0,0) * CFrame.Angles(0.087266462599716474, 0, 0),
+                Head = target:ToObjectSpace(headRotation),
+                ["Right Arm"] = rightHandOffset,
+                ["Left Arm"] = CFrame.new(-0.6,-0.1,0.1) * CFrame.Angles(-0.3490658503988659,-0.52359877559829882,1.0471975511965976) * CFrame.new(0,-1,0),
+                ["Left Leg"] = CFrame.new(-0.5,-2,0),
+                ["Right Leg"] = CFrame.new(0.5,-2,0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.angryState = "angry"
+    DanceV1.angryStateTime = 0
+    DanceV1.angryHeadStartPos = nil
+    DanceV1.angryHeadVelocity = nil
+
+    DanceV1.startAngry = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        local head = arg:FindFirstChild("Head")
+        if not head then return end
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        DanceV1.angryState = "angry"
+        DanceV1.angryStateTime = 0
+        DanceV1.angryHeadStartPos = nil
+        DanceV1.angryHeadVelocity = nil
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            DanceV1.angryStateTime = DanceV1.angryStateTime + dt
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            if DanceV1.angryState == "angry" and DanceV1.angryStateTime >= 3 then
+                DanceV1.angryState = "launch"; DanceV1.angryStateTime = 0
+                DanceV1.angryHeadStartPos = head.Position
+                DanceV1.angryHeadVelocity = Vector3.new(0, 600, 0)
+            elseif DanceV1.angryState == "launch" and DanceV1.angryStateTime >= 1.5 then
+                DanceV1.angryState = "shock"; DanceV1.angryStateTime = 0
+            elseif DanceV1.angryState == "shock" and DanceV1.angryStateTime >= 1 then
+                DanceV1.angryState = "falling"; DanceV1.angryStateTime = 0
+            elseif DanceV1.angryState == "falling" and DanceV1.angryStateTime >= 1.5 then
+                DanceV1.angryState = "catch"; DanceV1.angryStateTime = 0
+            elseif DanceV1.angryState == "catch" and DanceV1.angryStateTime >= 0.5 then
+                DanceV1.angryState = "angry"; DanceV1.angryStateTime = 0
+                DanceV1.angryHeadStartPos = nil; DanceV1.angryHeadVelocity = nil
+            end
+            local torsoOff, headOff, laOff, raOff, llOff, rlOff
+            if DanceV1.angryState == "angry" then
+                local sx = math.sin(DanceV1.angryStateTime*30)*0.06
+                local sy = math.sin(DanceV1.angryStateTime*35+1)*0.05
+                local sz = math.sin(DanceV1.angryStateTime*28+2)*0.05
+                torsoOff = CFrame.new(sx,sy,sz) * CFrame.Angles(math.rad(sx*20),math.rad(sz*20),math.rad(sy*15))
+                headOff = CFrame.new(sx*1.2,1.5+sy*1.2,sz*1.2) * CFrame.Angles(math.rad(-5+sx*30),math.rad(sz*25),math.rad(sy*20))
+                laOff = CFrame.new(-2,1,-1.5+sz) * CFrame.Angles(math.rad(10+sx*15),0,math.rad(15+sy*20)) * CFrame.new(0,-1,0)
+                raOff = CFrame.new(2,1,-1.5+sz) * CFrame.Angles(math.rad(10+sx*15),0,math.rad(-15-sy*20)) * CFrame.new(0,-1,0)
+                llOff = CFrame.new(-0.9+sx*0.5,-2+sy*0.3,sz*0.3) * CFrame.Angles(math.rad(sx*8),-0.26179938779914941,0)
+                rlOff = CFrame.new(0.9+sx*0.5,-2+sy*0.3,-sz*0.3) * CFrame.Angles(math.rad(sx*8),0.26179938779914941,0)
+            elseif DanceV1.angryState == "launch" then
+                local at = DanceV1.angryStateTime
+                local g = Vector3.new(0, -workspace.Gravity, 0)
+                torsoOff = CFrame.new(0,0,0)
+                if DanceV1.angryHeadStartPos then
+                    local hp = DanceV1.angryHeadStartPos + DanceV1.angryHeadVelocity*at + 0.5*g*at*at
+                    head.CFrame = CFrame.new(hp) * CFrame.Angles(at*10, at*8, at*12)
+                    head.AssemblyLinearVelocity = Vector3.zero
+                end
+                laOff = CFrame.new(-1.5,1,-1.5) * CFrame.Angles(-1.5707963267948966,0,0.26179938779914941) * CFrame.new(0,-1,0)
+                raOff = CFrame.new(1.5,1,-1.5) * CFrame.Angles(-1.5707963267948966,0,-0.26179938779914941) * CFrame.new(0,-1,0)
+                llOff = CFrame.new(-0.5,-2,0)
+                rlOff = CFrame.new(0.5,-2,0)
+            elseif DanceV1.angryState == "shock" then
+                local si = math.min(DanceV1.angryStateTime*4, 1)
+                torsoOff = CFrame.new(0,si*0.2,-si*0.3) * CFrame.Angles(math.rad(-si*20),0,0)
+                laOff = CFrame.new(-1.5,1+si*1.2,-1.5) * CFrame.Angles(math.rad(-90-si*80),0,0.52359877559829882) * CFrame.new(0,-1,0)
+                raOff = CFrame.new(1.5,1+si*1.2,-1.5) * CFrame.Angles(math.rad(-90-si*80),0,-0.52359877559829882) * CFrame.new(0,-1,0)
+                llOff = CFrame.new(-0.6,-2,0.1) * CFrame.Angles(-0.087266462599716474,0.26179938779914941,0)
+                rlOff = CFrame.new(0.6,-2,-0.1) * CFrame.Angles(-0.087266462599716474,-0.26179938779914941,0)
+            elseif DanceV1.angryState == "falling" then
+                local at = DanceV1.angryStateTime
+                torsoOff = CFrame.new(0,-0.3,0) * CFrame.Angles(0.26179938779914941,0,0)
+                local fh = math.max(150 - at/1.5*150, 1.5)
+                local hw = (target * CFrame.new(0, fh, 0)).Position
+                head.CFrame = CFrame.new(hw) * CFrame.Angles(at*20, at*15, at*18)
+                head.AssemblyLinearVelocity = Vector3.zero
+                laOff = CFrame.new(-1.5,1.5,-1.5) * CFrame.Angles(-2.2689280275926285,0,0.3490658503988659) * CFrame.new(0,-1,0)
+                raOff = CFrame.new(1.5,1.5,-1.5) * CFrame.Angles(-2.2689280275926285,0,-0.3490658503988659) * CFrame.new(0,-1,0)
+                llOff = CFrame.new(-0.6,-2,0.2)
+                rlOff = CFrame.new(0.6,-2,-0.2) * CFrame.Angles(0,0.3490658503988659,0)
+            elseif DanceV1.angryState == "catch" then
+                local s = DanceV1.angryStateTime / 0.5
+                torsoOff = CFrame.new(0,-0.1*(1-s),0) * CFrame.Angles(math.rad(5*(1-s)),0,0)
+                local th = target * CFrame.new(0,1.5,0)
+                head.CFrame = head.CFrame:Lerp(th, s)
+                head.AssemblyLinearVelocity = Vector3.zero
+                laOff = CFrame.new(-1,1,-1.5) * CFrame.Angles(-1.7453292519943295,-0.3490658503988659,0.69813170079773179) * CFrame.new(0,-0.8,0)
+                raOff = CFrame.new(1,1,-1.5) * CFrame.Angles(-1.7453292519943295,0.3490658503988659,-0.69813170079773179) * CFrame.new(0,-0.8,0)
+                llOff = CFrame.new(-0.5,-2,0)
+                rlOff = CFrame.new(0.5,-2,0)
+            end
+            local offsets = {}
+            if torsoOff then offsets.Torso = torsoOff end
+            if headOff then offsets.Head = headOff end
+            if laOff then offsets["Left Arm"] = laOff end
+            if raOff then offsets["Right Arm"] = raOff end
+            if llOff then offsets["Left Leg"] = llOff end
+            if rlOff then offsets["Right Leg"] = rlOff end
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startSoccer = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        local head = arg:FindFirstChild("Head")
+        if not head then return end
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        local soccerTime = 0
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            soccerTime = soccerTime + dt
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local phase = (soccerTime * 4) % 1
+            local legLift = 0
+            local headBounce = 0
+            if phase < 0.25 then legLift = phase/0.25
+            elseif phase < 0.35 then legLift = 1; headBounce = (phase-0.25)/0.1
+            elseif phase < 0.65 then legLift = 1 - (phase-0.35)/0.3; headBounce = 1
+            elseif phase < 0.8 then headBounce = 1 - (phase-0.65)/0.15 end
+            local headForward = -1.2
+            local headDown = 0.2 - headBounce * 4
+            local rightLegUp = 0.5 + legLift * 1.5
+            local rightLegForward = -0.5 - legLift * 0.7
+            local offsets = {
+                Torso = CFrame.new(0,0,0) * CFrame.Angles(math.rad(-legLift*10),0,0),
+                Head = CFrame.new(0,1.5-headDown,headForward) * CFrame.Angles(headBounce*3, soccerTime*4, headBounce*2),
+                ["Left Arm"] = CFrame.new(-1.5,1,-1.5) * CFrame.Angles(-1.7453292519943295,-0.3490658503988659,0.52359877559829882) * CFrame.new(0,-1,0),
+                ["Right Arm"] = CFrame.new(1.5,1,-1.5) * CFrame.Angles(-1.7453292519943295,0.3490658503988659,-0.52359877559829882) * CFrame.new(0,-1,0),
+                ["Left Leg"] = CFrame.new(-0.3,-2,0.1),
+                ["Right Leg"] = CFrame.new(0.5,-2+rightLegUp,rightLegForward) * CFrame.Angles(math.rad(-legLift*100),0,math.rad(-legLift*10)),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startHeadOrbit = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        local torso = arg:FindFirstChild("Torso") or arg:FindFirstChild("UpperTorso")
+        local head = arg:FindFirstChild("Head")
+        if not torso or not head then return end
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        local orbitTime = 0
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            orbitTime = orbitTime + dt
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local torsoW = (target * CFrame.new(0,0.5,0)).Position
+            local oa = orbitTime * 3
+            local headW = torsoW + Vector3.new(math.cos(oa)*3, 0.5, math.sin(oa)*3)
+            local headF = Vector3.new(-math.sin(oa), 0, math.cos(oa))
+            local headLook = CFrame.new(headW, headW + headF)
+            local headFinal = headLook * CFrame.Angles(0, 0, orbitTime*5)
+            local offsets = {
+                Torso = CFrame.new(0,0,0),
+                Head = target:ToObjectSpace(headFinal),
+                ["Left Arm"] = CFrame.new(-1.5,1,0) * CFrame.Angles(-2.0943951023931953,0,0.52359877559829882) * CFrame.new(0,-1,0),
+                ["Right Arm"] = CFrame.new(1.5,1,0) * CFrame.Angles(-2.0943951023931953,0,-0.52359877559829882) * CFrame.new(0,-1,0),
+                ["Left Leg"] = CFrame.new(-0.5,-2,0),
+                ["Right Leg"] = CFrame.new(0.5,-2,0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.startLol = function(arg)
+        DanceV1.stopPose()
+        local rootPart = arg:WaitForChild("HumanoidRootPart")
+        local humanoid = arg:WaitForChild("Humanoid")
+        DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+        local movePos = rootPart.Position
+        local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        local lolTime = 0
+        DanceV1.activeMode = "dance"
+        DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+            if not arg.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+            lolTime = lolTime + dt
+            local look = DanceV1.camera.CFrame.LookVector
+            local yaw = math.atan2(-look.X, -look.Z)
+            local ap = rootPart.Position
+            if (ap - movePos).Magnitude > 8 then movePos = ap end
+            local md = humanoid.MoveDirection
+            if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+            local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+            rootPart.CFrame = target
+            local lc = lolTime * 4
+            local li = math.abs(math.sin(lc))
+            local leanBack = math.rad(-15 - li*30)
+            local bounce = li * 0.3
+            local headTilt = math.rad(10 + li*25)
+            local armsFwd = -1.5 + li*0.3
+            local legSpread = 0.3 + li*0.3
+            local offsets = {
+                Torso = CFrame.new(0,bounce,li*0.3) * CFrame.Angles(leanBack,0,0),
+                Head = CFrame.new(0,1.5+bounce,-li*0.4) * CFrame.Angles(headTilt, math.rad(math.sin(lc*2)*15), math.rad(math.sin(lc*1.5)*8)),
+                ["Left Arm"] = CFrame.new(-0.8,0.3+bounce*0.5,armsFwd) * CFrame.Angles(math.rad(-70+li*15),-0.26179938779914941,math.rad(-50-li*10)) * CFrame.new(0,-0.7,0),
+                ["Right Arm"] = CFrame.new(0.8,0.3+bounce*0.5,armsFwd) * CFrame.Angles(math.rad(-70+li*15),0.26179938779914941,math.rad(-50-li*10)) * CFrame.new(0,-0.7,0),
+                ["Left Leg"] = CFrame.new(-0.5-legSpread,-2+bounce*0.3,0) * CFrame.Angles(math.rad(li*10),math.rad(-legSpread*30),0),
+                ["Right Leg"] = CFrame.new(0.5+legSpread,-2+bounce*0.3,0) * CFrame.Angles(math.rad(li*10),math.rad(legSpread*30),0),
+            }
+            for k, v in pairs(offsets) do
+                local part = arg:FindFirstChild(k)
+                if part and part:IsA("BasePart") then
+                    part.CFrame = target * v
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end
+            end
+        end)
+    end
+
+    DanceV1.makeProceduralDance = function(arg)
+        return function(arg2)
+            DanceV1.stopPose()
+            local rootPart = arg2:WaitForChild("HumanoidRootPart")
+            local humanoid = arg2:WaitForChild("Humanoid")
+            DanceV1.RagdollRemote:FireServer(rootPart, 9999999)
+            local movePos = rootPart.Position
+            local walkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+            DanceV1.activeMode = "dance"
+            DanceV1.poseConnection = DanceV1.RunService.Heartbeat:Connect(function(dt)
+                if not arg2.Parent or not rootPart.Parent then DanceV1.stopPose() return end
+                local t = tick()
+                local look = DanceV1.camera.CFrame.LookVector
+                local yaw = math.atan2(-look.X, -look.Z)
+                local ap = rootPart.Position
+                if (ap - movePos).Magnitude > 8 then movePos = ap end
+                local md = humanoid.MoveDirection
+                if md.Magnitude > 0.01 then movePos = movePos + md * walkSpeed * dt end
+                local target = CFrame.new(movePos) * CFrame.Angles(0, yaw, 0)
+                rootPart.CFrame = target
+                local offsets = arg.pose(t * arg.speed)
+                for k, v in pairs(offsets) do
+                    local part = arg2:FindFirstChild(k)
+                    if part and part:IsA("BasePart") then
+                        part.CFrame = target * v
+                        part.AssemblyLinearVelocity = Vector3.zero
+                    end
+                end
+            end)
+        end
+    end
+
+    DanceV1.originalDanceParams = {
+        ["Robot Lock"]={speed=6,pose=function(a)
+            local s=math.floor(math.sin(a)*4)/4; local s2=math.floor(math.sin(a+math.pi)*4)/4
+            return{Torso=CFrame.new(0,0,0)*CFrame.Angles(0,math.rad(s*20),0),
+                Head=CFrame.new(0,1.5,0)*CFrame.Angles(0,math.rad(-s*30),0),
+                ["Left Arm"]=CFrame.new(-1.5,1+s*0.5,0)*CFrame.Angles(math.rad(s*90),0,0),
+                ["Right Arm"]=CFrame.new(1.5,1+s2*0.5,0)*CFrame.Angles(math.rad(s2*90),0,0),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Disco Point"]={speed=4,pose=function(a)
+            local up=math.sin(a)>0; local p1=up and -2.6179938779914944 or 1.0471975511965976
+            local p2=up and 1.0471975511965976 or -2.6179938779914944; local hip=math.sin(a*2)*0.2
+            return{Torso=CFrame.new(hip,0,0)*CFrame.Angles(0,0,math.rad(hip*15)),
+                Head=CFrame.new(0,1.5,0),
+                ["Left Arm"]=CFrame.new(-1.5,1,0)*CFrame.Angles(p1,0,0)*CFrame.new(0,-1,0),
+                ["Right Arm"]=CFrame.new(1.5,1,0)*CFrame.Angles(p2,0,0)*CFrame.new(0,-1,0),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Wave Ripple"]={speed=4,pose=function(a)
+            return{Torso=CFrame.new(0,math.sin(a)*0.1,0)*CFrame.Angles(0,0,math.rad(math.sin(a)*8)),
+                Head=CFrame.new(0,1.5+math.sin(a+0.3)*0.1,0)*CFrame.Angles(math.rad(math.sin(a+0.3)*10),0,0),
+                ["Left Arm"]=CFrame.new(-1.5,1+math.sin(a+0.6)*0.8,0)*CFrame.Angles(0,0,0.3490658503988659),
+                ["Right Arm"]=CFrame.new(1.5,1+math.sin(a+1.2)*0.8,0)*CFrame.Angles(0,0,-0.3490658503988659),
+                ["Left Leg"]=CFrame.new(-0.5,-2+math.sin(a+1.8)*0.15,0),
+                ["Right Leg"]=CFrame.new(0.5,-2+math.sin(a+2.4)*0.15,0)}
+        end},
+        ["Jazz Hands"]={speed=14,pose=function(a)
+            local sh=math.sin(a)*0.15
+            return{Torso=CFrame.new(0,0.1,0),Head=CFrame.new(0,1.6,0),
+                ["Left Arm"]=CFrame.new(-1.8+sh,1.6,0)*CFrame.Angles(-2.4434609527920612,0,math.rad(sh*60)),
+                ["Right Arm"]=CFrame.new(1.8-sh,1.6,0)*CFrame.Angles(-2.4434609527920612,0,math.rad(-sh*60)),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        Headbang={speed=12,pose=function(a)
+            local s=math.abs(math.sin(a))
+            return{Torso=CFrame.new(0,0,0)*CFrame.Angles(math.rad(s*15),0,0),
+                Head=CFrame.new(0,1.5-s*0.3,0.2*s)*CFrame.Angles(math.rad(s*55),0,0),
+                ["Left Arm"]=CFrame.new(-1.5,1,0)*CFrame.Angles(-0.3490658503988659,0,0.17453292519943295),
+                ["Right Arm"]=CFrame.new(1.5,1,0)*CFrame.Angles(-0.3490658503988659,0,-0.17453292519943295),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Shoulder Shimmy"]={speed=16,pose=function(a)
+            local s=math.sin(a)*0.3; local s2=math.sin(a+math.pi)*0.3
+            return{Torso=CFrame.new(0,0,0)*CFrame.Angles(0,0,math.rad(s*6)),
+                Head=CFrame.new(0,1.5,0),
+                ["Left Arm"]=CFrame.new(-1.5,1+s,0)*CFrame.Angles(0,0,0.26179938779914941),
+                ["Right Arm"]=CFrame.new(1.5,1+s2,0)*CFrame.Angles(0,0,-0.26179938779914941),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Boxer Bounce"]={speed=10,pose=function(a)
+            local b=math.abs(math.sin(a))*0.25; local j=math.sin(a*2)*0.4
+            return{Torso=CFrame.new(0,b,0)*CFrame.Angles(0.087266462599716474,0,0),
+                Head=CFrame.new(0,1.4+b,0),
+                ["Left Arm"]=CFrame.new(-1,1.2+b,-0.3+j)*CFrame.Angles(-1.7453292519943295,0,0),
+                ["Right Arm"]=CFrame.new(1,1.2+b,-0.3-j)*CFrame.Angles(-1.7453292519943295,0,0),
+                ["Left Leg"]=CFrame.new(-0.5,-2+b*0.5,0.2),["Right Leg"]=CFrame.new(0.5,-2+b*0.5,-0.2)}
+        end},
+        ["Salsa Hip"]={speed=7,pose=function(a)
+            local h=math.sin(a)*0.5
+            return{Torso=CFrame.new(h*0.3,0,0)*CFrame.Angles(0,math.rad(h*10),math.rad(h*12)),
+                Head=CFrame.new(0,1.5,0)*CFrame.Angles(0,math.rad(-h*8),0),
+                ["Left Arm"]=CFrame.new(-1.4,1.1,0)*CFrame.Angles(-0.69813170079773179,0,math.rad(h*20)),
+                ["Right Arm"]=CFrame.new(1.4,1.1,0)*CFrame.Angles(-0.69813170079773179,0,math.rad(-h*20)),
+                ["Left Leg"]=CFrame.new(-0.5-h*0.2,-2,0),["Right Leg"]=CFrame.new(0.5+h*0.2,-2,0)}
+        end},
+        ["Cheer Jump"]={speed=9,pose=function(a)
+            local j=math.abs(math.sin(a))*0.6
+            return{Torso=CFrame.new(0,j,0),Head=CFrame.new(0,1.5+j,0),
+                ["Left Arm"]=CFrame.new(-1.5,2+j,0)*CFrame.Angles(-2.9670597283903604,0,0.3490658503988659),
+                ["Right Arm"]=CFrame.new(1.5,2+j,0)*CFrame.Angles(-2.9670597283903604,0,-0.3490658503988659),
+                ["Left Leg"]=CFrame.new(-0.5,-2+j*0.4,0),["Right Leg"]=CFrame.new(0.5,-2+j*0.4,0)}
+        end},
+        ["Propeller Arms"]={speed=10,pose=function(a)
+            return{Torso=CFrame.new(0,0,0),Head=CFrame.new(0,1.5,0),
+                ["Left Arm"]=CFrame.new(-1.5,1,0)*CFrame.Angles(a,0,0)*CFrame.new(0,-1,0),
+                ["Right Arm"]=CFrame.new(1.5,1,0)*CFrame.Angles(-a,0,0)*CFrame.new(0,-1,0),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Matrix Lean"]={speed=3,pose=function(a)
+            local l=(math.sin(a)+1)/2
+            return{Torso=CFrame.new(0,-l*0.4,-l*0.5)*CFrame.Angles(math.rad(-l*60),0,0),
+                Head=CFrame.new(0,1.5-l*0.3,-l*0.3)*CFrame.Angles(math.rad(-l*60),0,0),
+                ["Left Arm"]=CFrame.new(-1.5,1,0)*CFrame.Angles(math.rad(-l*30),0,0),
+                ["Right Arm"]=CFrame.new(1.5,1,0)*CFrame.Angles(math.rad(-l*30),0,0),
+                ["Left Leg"]=CFrame.new(-0.6,-2,0.2),["Right Leg"]=CFrame.new(0.4,-2,-0.2)}
+        end},
+        ["Victory Pump"]={speed=8,pose=function(a)
+            local p=math.abs(math.sin(a))
+            return{Torso=CFrame.new(0,p*0.15,0),Head=CFrame.new(0,1.5+p*0.15,0),
+                ["Left Arm"]=CFrame.new(-1.5,1+p*1.2,0)*CFrame.Angles(-2.9670597283903604*p,0,0),
+                ["Right Arm"]=CFrame.new(1.5,1,0)*CFrame.Angles(-0.52359877559829882,0,0),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Ninja Flow"]={speed=5,pose=function(a)
+            local c=0.4; local ch=math.sin(a)*0.6
+            return{Torso=CFrame.new(0,-c,0)*CFrame.Angles(0.17453292519943295,math.rad(ch*10),0),
+                Head=CFrame.new(0,1.5-c,0),
+                ["Left Arm"]=CFrame.new(-1.3,1-c,ch)*CFrame.Angles(-0.69813170079773179,0,0.3490658503988659),
+                ["Right Arm"]=CFrame.new(1.3,1-c,-ch)*CFrame.Angles(-0.69813170079773179,0,-0.3490658503988659),
+                ["Left Leg"]=CFrame.new(-0.6,-1.8-c*0.3,0.1)*CFrame.Angles(-0.26179938779914941,0,0),
+                ["Right Leg"]=CFrame.new(0.6,-1.8-c*0.3,-0.1)*CFrame.Angles(-0.26179938779914941,0,0)}
+        end},
+        ["Superhero Pose"]={speed=2,pose=function(a)
+            local b=math.sin(a)*0.03
+            return{Torso=CFrame.new(0,b,0.1)*CFrame.Angles(-0.087266462599716474,0,0),
+                Head=CFrame.new(0,1.5+b,0.1)*CFrame.Angles(0.087266462599716474,0,0),
+                ["Left Arm"]=CFrame.new(-1.2,1.2,0.3)*CFrame.Angles(-1.7453292519943295,0,0.52359877559829882),
+                ["Right Arm"]=CFrame.new(1.4,0.9,0)*CFrame.Angles(-0.17453292519943295,0,-0.17453292519943295),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0.1),
+                ["Right Leg"]=CFrame.new(0.6,-2,-0.3)*CFrame.Angles(0,0.3490658503988659,0)}
+        end},
+        ["Snake Wave"]={speed=5,pose=function(a)
+            return{Torso=CFrame.new(math.sin(a)*0.4,0,0)*CFrame.Angles(0,0,math.rad(math.sin(a)*20)),
+                Head=CFrame.new(math.sin(a+0.8)*0.5,1.5,0)*CFrame.Angles(0,0,math.rad(math.sin(a+0.8)*25)),
+                ["Left Arm"]=CFrame.new(-1.5+math.sin(a)*0.2,1,0)*CFrame.Angles(0,0,0.26179938779914941),
+                ["Right Arm"]=CFrame.new(1.5+math.sin(a)*0.2,1,0)*CFrame.Angles(0,0,-0.26179938779914941),
+                ["Left Leg"]=CFrame.new(-0.5-math.sin(a)*0.15,-2,0),
+                ["Right Leg"]=CFrame.new(0.5-math.sin(a)*0.15,-2,0)}
+        end},
+        ["Staircase Step"]={speed=4,pose=function(a)
+            local s=math.sin(a); local st=math.abs(math.sin(a*2))*0.3
+            return{Torso=CFrame.new(s*0.8,st,0),Head=CFrame.new(s*0.8,1.5+st,0),
+                ["Left Arm"]=CFrame.new(-1.5+s*0.8,1,0)*CFrame.Angles(0,0,0.17453292519943295),
+                ["Right Arm"]=CFrame.new(1.5+s*0.8,1,0)*CFrame.Angles(0,0,-0.17453292519943295),
+                ["Left Leg"]=CFrame.new(-0.5+s*0.8,-2+st,0),
+                ["Right Leg"]=CFrame.new(0.5+s*0.8,-2+st,0)}
+        end},
+        ["Windmill Arms"]={speed=6,pose=function(a)
+            return{Torso=CFrame.new(0,0,0),Head=CFrame.new(0,1.5,0),
+                ["Left Arm"]=CFrame.new(-1.5,1,0)*CFrame.Angles(a,0,0)*CFrame.new(0,-1,0),
+                ["Right Arm"]=CFrame.new(1.5,1,0)*CFrame.Angles(a+math.pi,0,0)*CFrame.new(0,-1,0),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Popcorn Pop"]={speed=13,pose=function(a)
+            local p=math.max(0,math.sin(a))^3*0.5
+            return{Torso=CFrame.new(0,p,0),Head=CFrame.new(0,1.5+p,0),
+                ["Left Arm"]=CFrame.new(-1.5,1+p*1.5,0)*CFrame.Angles(math.rad(-p*200),0,0),
+                ["Right Arm"]=CFrame.new(1.5,1+p*1.5,0)*CFrame.Angles(math.rad(-p*200),0,0),
+                ["Left Leg"]=CFrame.new(-0.5,-2+p*0.3,0),["Right Leg"]=CFrame.new(0.5,-2+p*0.3,0)}
+        end},
+        ["Clap Along"]={speed=8,pose=function(a)
+            local c=(math.sin(a)+1)/2
+            return{Torso=CFrame.new(0,math.abs(math.sin(a))*0.1,0),
+                Head=CFrame.new(0,1.5,0)*CFrame.Angles(math.rad(c*10),0,0),
+                ["Left Arm"]=CFrame.new(-0.7*c-0.3,1.2,0.2)*CFrame.Angles(-1.2217304763960306,0,0.3490658503988659),
+                ["Right Arm"]=CFrame.new(0.7*c+0.3,1.2,0.2)*CFrame.Angles(-1.2217304763960306,0,-0.3490658503988659),
+                ["Left Leg"]=CFrame.new(-0.5,-2,0),["Right Leg"]=CFrame.new(0.5,-2,0)}
+        end},
+        ["Zombie Shuffle"]={speed=3,pose=function(a)
+            local s=math.sin(a)*0.3
+            return{Torso=CFrame.new(0,0,0)*CFrame.Angles(-0.13962634015954636,math.rad(s*5),0),
+                Head=CFrame.new(0,1.5,0)*CFrame.Angles(0.087266462599716474,0,math.rad(s*10)),
+                ["Left Arm"]=CFrame.new(-1.5,1.3,-1)*CFrame.Angles(-1.4835298641951802,0,0),
+                ["Right Arm"]=CFrame.new(1.5,1.3,-1)*CFrame.Angles(-1.4835298641951802,0,0),
+                ["Left Leg"]=CFrame.new(-0.5+s*0.3,-2,0),["Right Leg"]=CFrame.new(0.5-s*0.3,-2,0)}
+        end},
+    }
+
+    DanceV1.Dances = {
+        ["Floss Dance"]=DanceV1.startFlossDance,["Ouen Dance"]=DanceV1.startOrangeJustice,
+        ["Head Ball"]=DanceV1.startHeadThrow,Cartoon=DanceV1.startCartoon,Kawaii=DanceV1.startKawaii,
+        Cool=DanceV1.startCool,Spider=DanceV1.startSpider,["Koshi huri"]=DanceV1.startKoshiHuri,
+        ["Head dribble"]=DanceV1.startHeadDribble,Angry=DanceV1.startAngry,soccer=DanceV1.startSoccer,
+        ["Head orbit"]=DanceV1.startHeadOrbit,Lol=DanceV1.startLol,
+    }
+    for k, p in pairs(DanceV1.originalDanceParams) do
+        DanceV1.Dances[k] = DanceV1.makeProceduralDance(p)
+    end
+
+    DanceV1.playSelectedDance = function(arg)
+        local fn = DanceV1.Dances[DanceV1.selectedDance]
+        if fn then fn(arg) end
+    end
+
+    -- v1 UI
+    local V1Group = Tabs.DanceTab:AddLeftGroupbox("Ragdoll Dance v1", "music")
+    
+    local v1ToggleActive = false
+    V1Group:AddDropdown("DanceV1Select", {
+        Values = DanceV1.danceNames,
+        Default = "Floss Dance",
+        Text = "Dance Type",
+        Callback = function(v)
+            DanceV1.selectedDance = v
+            if v1ToggleActive and DanceV1.me.Character then
+                pcall(DanceV1.playSelectedDance, DanceV1.me.Character)
+            end
+        end
+    })
+    
+    V1Group:AddToggle("DanceV1Toggle", {
+        Text = "Ragdoll Dance v1 ON/OFF",
+        Default = false,
+        Callback = function(state)
+            v1ToggleActive = state
+            if state then
+                if DanceV1.me.Character then
+                    pcall(DanceV1.playSelectedDance, DanceV1.me.Character)
+                    DanceNotify("Dance v1", "Started: " .. tostring(DanceV1.selectedDance), 3)
+                else
+                    DanceNotify("Dance v1", "キャラクター未生成", 3)
+                end
+            else
+                pcall(DanceV1.stopPose)
+                DanceNotify("Dance v1", "Stopped", 2)
+            end
+        end
+    })
+    
+    DanceV1.me.CharacterAdded:Connect(function(char)
+        task.wait(0.2)
+        if v1ToggleActive then
+            if DanceV1.activeMode == "dance" then
+                pcall(DanceV1.playSelectedDance, char)
+            elseif DanceV1.activeMode == "ragdoll" then
+                pcall(DanceV1.startRagdollOnly, char)
+            end
+        end
+    end)
+
+    -- ============================================================
+    -- Ragdoll Dance v2
+    -- ============================================================
+    local DANCE_LIST_URL = "https://raw.githubusercontent.com/d113-21/Dancev2/refs/heads/main/List_Json.lua.txt"
+    local SKIP_PARTS = {
+        HumanoidRootPart = true,
+        Handle           = true,
+        LArmIKPart       = true,
+        RArmIKPart       = true,
+    }
+    
+    local DanceV2 = {}
+    DanceV2.RunService        = RunService
+    DanceV2.me                = LocalPlayer
+    DanceV2.camera            = workspace.CurrentCamera
+    DanceV2.RagdollRemote     = RagdollRemote
+    
+    DanceV2.currentDanceRawTableV2 = {}
+    DanceV2.danceListV2           = {}
+    DanceV2.activeDanceDataV2     = nil
+    DanceV2.selectedDanceNameV2   = ""
+    DanceV2.isDancingV2           = false
+    DanceV2.poseConnectionV2      = nil
+    DanceV2.frameIndexV2          = 1
+    DanceV2.frameTimerV2          = 0
+
+    DanceV2.stopHipDanceV2 = function(arg)
+        if DanceV2.poseConnectionV2 then
+            pcall(function() DanceV2.poseConnectionV2:Disconnect() end)
+            DanceV2.poseConnectionV2 = nil
+        end
+        if arg then
+            local hum = arg:FindFirstChildOfClass("Humanoid")
+            if hum then
+                pcall(function()
+                    hum.PlatformStand = false
+                    hum.AutoRotate = true
+                end)
+            end
+        end
+    end
+
+    DanceV2.startHipDanceV2 = function(arg)
+        if not DanceV2.activeDanceDataV2 then return end
+        DanceV2.stopHipDanceV2(arg)
+
+        local hrp = arg:WaitForChild("HumanoidRootPart")
+        local hum = arg:WaitForChild("Humanoid")
+        if not hrp or not hum then return end
+
+        if DanceV2.RagdollRemote then
+            pcall(function() DanceV2.RagdollRemote:FireServer(hrp, 9999999) end)
+        else
+            hum.PlatformStand = true
+            hum.AutoRotate   = false
+        end
+
+        local position  = hrp.Position
+        local walkSpeed = hum.WalkSpeed > 0 and hum.WalkSpeed or 16
+        local total     = #DanceV2.activeDanceDataV2.frames
+        if total == 0 then return end
+
+        DanceV2.frameIndexV2 = 1
+        DanceV2.frameTimerV2 = 0
+
+        local function parse(d)
+            return CFrame.new(d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10], d[11], d[12])
+        end
+
+        DanceV2.poseConnectionV2 = DanceV2.RunService.Heartbeat:Connect(function(dt)
+            if not arg or not arg.Parent or not hrp or not hrp.Parent then return end
+
+            local look = DanceV2.camera.CFrame.LookVector
+            local yaw  = math.atan2(-look.X, -look.Z)
+            local p2   = hrp.Position
+            if 8 < (p2 - position).Magnitude then position = p2 end
+            local md = hum.MoveDirection
+            if md.Magnitude > 0.01 then position = position + md * walkSpeed * dt end
+
+            local baseCF = CFrame.new(position) * CFrame.Angles(0, yaw, 0)
+            hrp.CFrame = baseCF
+            hrp.AssemblyLinearVelocity = Vector3.zero
+
+            DanceV2.frameTimerV2 = DanceV2.frameTimerV2 + dt
+            local wrapped = false
+            if DanceV2.activeDanceDataV2.interval <= DanceV2.frameTimerV2 then
+                DanceV2.frameTimerV2 = DanceV2.frameTimerV2 - DanceV2.activeDanceDataV2.interval
+                DanceV2.frameIndexV2 = DanceV2.frameIndexV2 + 1
+                if total < DanceV2.frameIndexV2 then
+                    DanceV2.frameIndexV2 = 1
+                    wrapped = true
+                end
+            end
+
+            local cur   = DanceV2.activeDanceDataV2.frames[DanceV2.frameIndexV2]
+            local nxt   = DanceV2.activeDanceDataV2.frames[DanceV2.frameIndexV2 < total and DanceV2.frameIndexV2 + 1 or 1]
+            local alpha = wrapped and 1 or (DanceV2.frameTimerV2 / DanceV2.activeDanceDataV2.interval)
+
+            for name, data in pairs(cur.parts) do
+                if not SKIP_PARTS[name] then
+                    local part = arg:FindFirstChild(name)
+                    if part and part:IsA("BasePart") then
+                        local nd = nxt.parts[name] or data
+                        part.CFrame = baseCF * parse(data):Lerp(parse(nd), alpha)
+                        part.AssemblyLinearVelocity = Vector3.zero
+                    end
+                end
+            end
+        end)
+    end
+
+    DanceV2.refreshDanceV2List = function()
+        DanceV2.currentDanceRawTableV2 = {}
+
+        local ok, raw = pcall(function()
+            return game:HttpGet(DANCE_LIST_URL)
+        end)
+
+        if ok and type(raw) == "string" and #raw > 0 then
+            local ok2, tbl = pcall(function()
+                local chunk = loadstring(raw)
+                if chunk then return chunk() end
+            end)
+
+            if ok2 and type(tbl) == "table" then
+                for name, jsonStr in pairs(tbl) do
+                    if type(name) == "string" and type(jsonStr) == "string" then
+                        DanceV2.currentDanceRawTableV2[name] = jsonStr
+                    end
+                end
+            end
+        end
+
+        pcall(function()
+            if not isfolder("PoopHub") then makefolder("PoopHub") end
+            if not isfolder("PoopHub/FTAP") then makefolder("PoopHub/FTAP") end
+            if not isfolder("PoopHub/FTAP/Emote") then makefolder("PoopHub/FTAP/Emote") end
+
+            local ok3, files = pcall(function() return listfiles("PoopHub/FTAP/Emote") end)
+            if ok3 and type(files) == "table" then
+                for _, path in ipairs(files) do
+                    if path:match("%.dance$") then
+                        local name = path:gsub("\\", "/"):match("([^/]+)%.dance$")
+                        if name then
+                            local ok4, content = pcall(function() return readfile(path) end)
+                            if ok4 and content then
+                                DanceV2.currentDanceRawTableV2[name] = content
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        table.clear(DanceV2.danceListV2)
+        for k in pairs(DanceV2.currentDanceRawTableV2) do
+            table.insert(DanceV2.danceListV2, k)
+        end
+        table.sort(DanceV2.danceListV2)
+
+        if #DanceV2.danceListV2 == 0 then
+            table.insert(DanceV2.danceListV2, "No dances found")
+        end
+
+        return DanceV2.danceListV2
+    end
+
+    local V2Group = Tabs.DanceTab:AddLeftGroupbox("Ragdoll Dance v2", "rotate-cw")
+    
+    local v2Dropdown
+    v2Dropdown = V2Group:AddDropdown("DanceV2Select", {
+        Values = { "Click Refresh..." },
+        Default = "Click Refresh...",
+        Text = "Dance V2 Type",
+        Callback = function(opt)
+            if opt == "Click Refresh..." or opt == "No dances found" or opt == "" then return end
+            DanceV2.selectedDanceNameV2 = opt
+            local raw = DanceV2.currentDanceRawTableV2[opt]
+            if not raw then return end
+            local ok, decoded = pcall(function()
+                return HttpService:JSONDecode(raw)
+            end)
+            if ok and decoded then
+                DanceV2.activeDanceDataV2 = decoded
+                if DanceV2.isDancingV2 and DanceV2.me.Character then
+                    pcall(DanceV2.startHipDanceV2, DanceV2.me.Character)
+                end
+            else
+                DanceNotify("Dance V2", "JSON パース失敗: " .. tostring(opt), 3)
+                DanceV2.activeDanceDataV2 = nil
+            end
+        end,
+    })
+    
+    V2Group:AddButton({
+        Text = "Refresh Dance V2 List",
+        Func = function()
+            local list = DanceV2.refreshDanceV2List()
+            if v2Dropdown then
+                pcall(function()
+                    v2Dropdown:SetValues(list)
+                end)
+            end
+            DanceNotify("Dance V2", (#list) .. " 件のダンスを読み込み", 3)
+        end,
+    })
+    
+    V2Group:AddToggle("DanceV2Toggle", {
+        Text = "Enable Dance V2",
+        Default = false,
+        Callback = function(state)
+            DanceV2.isDancingV2 = state
+            if state then
+                if DanceV2.activeDanceDataV2 and DanceV2.me.Character then
+                    pcall(DanceV2.startHipDanceV2, DanceV2.me.Character)
+                    DanceNotify("Dance V2", "Started: " .. tostring(DanceV2.selectedDanceNameV2), 3)
+                else
+                    DanceNotify("Dance V2", "先にダンスを選択してください", 3)
+                end
+            else
+                pcall(DanceV2.stopHipDanceV2, DanceV2.me.Character)
+                DanceNotify("Dance V2", "Stopped", 2)
+            end
+        end
+    })
+    
+    DanceV2.me.CharacterAdded:Connect(function(char)
+        task.wait(0.3)
+        if DanceV2.isDancingV2 and DanceV2.activeDanceDataV2 then
+            pcall(DanceV2.startHipDanceV2, char)
+        end
+    end)
+end
 -- =====================================================
 -- Dev タブ: Developer Info
 -- =====================================================
