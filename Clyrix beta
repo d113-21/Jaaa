@@ -1,6 +1,8 @@
 local repo = 'https://raw.githubusercontent.com/deividcomsono/Obsidian/main/'
 local LibrarySource = game:HttpGet(repo .. 'Library.lua')
 local Library = loadstring(LibrarySource)()
+local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 local Toggles = Library.Toggles
 local Options = Library.Options
 Library.Scheme.AccentColor = Color3.fromRGB(255, 255, 255)
@@ -51,6 +53,7 @@ local Tabs = {
     FunTab = Window:AddTab('Fun', 'gamepad-2', 'Funs'),
     DevTab = Window:AddTab('Dev', 'user-check', 'Dev Tab'),
     Settings = Window:AddTab('Settings', 'settings', 'setting mode'),
+    UISettingsTab = Window:AddTab('UI Settings', 'sliders', 'Config & Theme'),
 }
 
 Library:Notify({
@@ -9618,3 +9621,23 @@ end) -- pcall end
 if not settingsOK then
     warn("[Clyrix] Settings init error: " .. tostring(settingsErr))
 end
+
+-- =====================================================
+-- UI Settings タブ: Config / Theme (SaveManager / ThemeManager)
+-- =====================================================
+task.spawn(function()
+    task.wait(1) -- 全タブ/トグル構築待ち
+
+    pcall(function()
+        ThemeManager:SetLibrary(Library)
+        SaveManager:SetLibrary(Library)
+        SaveManager:IgnoreThemeSettings()
+        SaveManager:SetIgnoreIndexes({})
+        ThemeManager:SetFolder("Clyrix")
+        SaveManager:SetFolder("Clyrix/specific-game")
+        SaveManager:SetSubFolder("specific-place")
+        SaveManager:BuildConfigSection(Tabs.UISettingsTab)
+        ThemeManager:ApplyToTab(Tabs.UISettingsTab)
+        SaveManager:LoadAutoloadConfig()
+    end)
+end)
