@@ -3624,12 +3624,6 @@ local function BuildValueImages()
             if img ~= "" then valueImages[name] = img end
         end
     end)
-    if not ok then
-        NotifyAIT("ValueImages", "取得失敗: " .. tostring(err), 4)
-    else
-        local c = 0 for _ in pairs(valueImages) do c = c + 1 end
-        NotifyAIT("ValueImages", ("%d / %d 件のIDを取得"):format(c, #antiInputTypes), 3)
-    end
     return valueImages
 end
 -- ▲ ここまで ▲
