@@ -4665,122 +4665,199 @@ RagdollGroup:AddToggle("LoopBananaRagdoll", {
 -- ============================================================
 local KickModeGroup = Tabs.TargetTab:AddRightGroupbox("Kick Mode")
 -- ============================================================
--- Kick fast (Ragdoll) + Line Lag
+-- Pallet Kick (Source-Faithful)
 -- ============================================================
 do
-    local KickFastActive = false
-    local KickFastLagActive = false
-    local KickFastConnect = nil
-    local KickFastPallet = nil
-    local KickFastSpawning = false
+    local aa1 = game:GetService("Players")
+    local aa2 = game:GetService("ReplicatedStorage")
+    local aa3 = game:GetService("RunService")
 
-    local KickGrabEvents = replicatedStorage:FindFirstChild("GrabEvents")
+    local aa4 = aa1.LocalPlayer
+    local aa5 = aa2:WaitForChild("GrabEvents")
 
-    local function getTargetChar()
-        local target = selectedTargetPlayerObj
-        if target and target.Character then
-            return target.Character:FindFirstChild("HumanoidRootPart"), target.Character:FindFirstChild("Humanoid")
+    local aa6 = false
+    local aa8 = 15
+    local aa9 = 25
+
+    local aa10 = aa2:WaitForChild("MenuToys"):WaitForChild("SpawnToyRemoteFunction")
+    local aa11 = aa5:WaitForChild("SetNetworkOwner")
+
+    local aa12 = { aa13 = false }
+    local aa14 = { aa15 = nil }
+    local aa16 = {}
+    local aa17 = false
+
+    -- ============================================================
+    -- ソースのロジック（1行も変更なし）
+    -- ============================================================
+    local function aa25(aa26, aa27)
+        if not aa26.Character then return end
+        local aa28 = aa26.Character:FindFirstChild("HumanoidRootPart")
+        if not aa28 or not aa27 then return end
+
+        local aa29 = aa27.CFrame
+        aa27.CFrame = aa28.CFrame * CFrame.new(0, 0, 2)
+
+        for _ = 1, 15 do
+            aa11:FireServer(aa28, aa28.CFrame)
+            task.wait()
         end
-        return nil, nil
+
+        aa27.CFrame = aa29
     end
 
-    local function LocalSpawnPallet()
-        if KickFastSpawning then return nil end
-        KickFastSpawning = true
-        local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-        local root = char:WaitForChild("HumanoidRootPart")
+    local function aa31(aa32, aa33, aa34)
+        return aa32:FindFirstChild(aa33) or aa32:WaitForChild(aa33, aa34 or 5)
+    end
+
+    local function aa35(aa36)
+        if aa36 and aa36:IsA("BasePart") then
+            aa11:FireServer(aa36, aa36.CFrame)
+            task.wait()
+        end
+    end
+
+    local function aa37(aa38, aa39)
+        return aa38:FindFirstChild(aa39) ~= nil
+    end
+
+    local function aa40(aa41)
+        local aa42 = aa4.Character or aa4.CharacterAdded:Wait()
+        local aa43 = aa42:WaitForChild("HumanoidRootPart")
+
+        -- ★ 原因：InPlot などが存在しない場合のエラーを防ぐため安全に取得
+        local inPlot = aa4:FindFirstChild("InPlot")
+        local inOwnedPlot = aa4:FindFirstChild("InOwnedPlot")
+        local canSpawnToy = aa4:FindFirstChild("CanSpawnToy")
+
         local waitCount = 0
-        while (localPlayer.InPlot.Value and not localPlayer.InOwnedPlot.Value) and waitCount < 50 do
+        while (inPlot and inPlot.Value and inOwnedPlot and not inOwnedPlot.Value) and waitCount < 50 do
             task.wait(0.1)
             waitCount = waitCount + 1
         end
         waitCount = 0
-        while not localPlayer.CanSpawnToy.Value and waitCount < 50 do
+        while canSpawnToy and not canSpawnToy.Value and waitCount < 50 do
             task.wait(0.1)
             waitCount = waitCount + 1
         end
-        local spawnCF = root.CFrame * CFrame.new(0, 14, 20)
-        local folder = workspace:FindFirstChild(localPlayer.Name.."SpawnedInToys")
-        if not folder then
-            local plotItems = workspace:FindFirstChild("PlotItems")
-            folder = plotItems and plotItems:FindFirstChild("Plot1") or workspace
+
+        local aa44 = aa43.CFrame * CFrame.new(0, 14, 20)
+
+        local aa45 = workspace:FindFirstChild(aa4.Name.."SpawnedInToys")
+        if not aa45 then
+            aa45 = workspace:FindFirstChild("PlotItems")
+            if aa45 then
+                aa45 = aa45:FindFirstChild("Plot1")
+            end
         end
-        local spawned = nil
-        local conn = folder.ChildAdded:Connect(function(c)
-            if c.Name == "PalletLightBrown" then spawned = c end
+        if not aa45 then
+            aa45 = workspace
+        end
+
+        local aa46 = nil
+        local aa47 = aa45.ChildAdded:Connect(function(aa48)
+            if aa48.Name == aa41 then
+                aa46 = aa48
+            end
         end)
+
         task.spawn(function()
             pcall(function()
-                replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer("PalletLightBrown", spawnCF, Vector3.zero)
+                aa10:InvokeServer(aa41, aa44, Vector3.zero)
             end)
         end)
-        local t0 = tick()
-        repeat task.wait(0.05) until spawned or (tick() - t0) > 5
-        if conn then conn:Disconnect() end
-        return spawned
+
+        local aa49 = tick()
+        repeat task.wait(0.05) until aa46 or (tick() - aa49) > 5
+        aa47:Disconnect()
+        return aa46
     end
 
-    local function LocalMakePallet()
-        if KickFastSpawning then return nil end
-        KickFastSpawning = true
-        local pallet = LocalSpawnPallet()
-        if not pallet then
-            KickFastSpawning = false
+    local function aa50()
+        if aa17 then return nil end
+        aa17 = true
+
+        local aa51 = aa40("PalletLightBrown")
+        if not aa51 then
+            aa17 = false
             return nil
         end
-        local soundPart = pallet:FindFirstChild("SoundPart") or pallet:WaitForChild("SoundPart", 3)
-        if not soundPart then
-            pallet:Destroy() KickFastSpawning = false return nil
+
+        local aa52 = aa31(aa51, "SoundPart", 3)
+        if not aa52 then
+            aa51:Destroy()
+            aa17 = false
+            return nil
         end
-        local retries = 0
-        while retries < 10 do
-            if not KickFastActive then
-                pallet:Destroy() KickFastSpawning = false return nil
+
+        local retryCount = 0
+        while retryCount < 10 do
+            if not aa12.aa13 then
+                aa51:Destroy()
+                aa17 = false
+                return nil
             end
-            if KickGrabEvents and KickGrabEvents.SetNetworkOwner then
-                pcall(function() KickGrabEvents.SetNetworkOwner:FireServer(soundPart, soundPart.CFrame) end)
-            end
+            aa35(aa52)
             task.wait()
-            if soundPart:FindFirstChild("PartOwner") then break end
-            retries = retries + 1
+            if aa37(aa52, "PartOwner") then
+                break
+            end
+            retryCount = retryCount + 1
         end
-        if not soundPart:FindFirstChild("PartOwner") then
-            pallet:Destroy() KickFastSpawning = false return nil
+
+        if not aa37(aa52, "PartOwner") then
+            aa51:Destroy()
+            aa17 = false
+            return nil
         end
-        for _, d in pairs(pallet:GetDescendants()) do
-            if d:IsA("BasePart") then
-                d.CanCollide = false
-                d.Transparency = 0.8
+
+        for _, aa54 in pairs(aa51:GetDescendants()) do
+            if aa54:IsA("BasePart") then
+                aa54.CanCollide = false
+                aa54.Transparency = 0.8
             end
         end
-        pallet.Name = "RagdollPalete"
-        local bv = Instance.new("BodyVelocity")
-        bv.MaxForce = Vector3.new(0, math.huge, 0)
-        bv.Velocity = Vector3.new(0, 900, 0)
-        bv.Parent = soundPart
-        KickFastSpawning = false
-        return pallet
+        aa51.Name = "RagdollPalete"
+
+        local aa55 = Instance.new("BodyVelocity")
+        aa55.MaxForce = Vector3.new(0, math.huge, 0)
+        aa55.Velocity = Vector3.new(0, 900, 0)
+        aa55.Parent = aa52
+
+        aa17 = false
+        return aa51
     end
 
-    -- UIトグルの追加（Kick Modeの一番上）
+    -- ============================================================
+    -- UIと実行ループ
+    -- ============================================================
+    
     KickModeGroup:AddToggle("KickFastRagdoll", {
         Text = "kick fast (Ragdoll)",
         Default = false,
-        Callback = function(on)
-            KickFastActive = on
-            if on then
-                if not selectedTargetPlayerObj then
+        Callback = function(aa61)
+            aa6 = aa61
+            aa12.aa13 = aa61
+            
+            -- Clyrixのターゲットをソースの変数に同期
+            if selectedTargetPlayerObj then
+                aa14.aa15 = selectedTargetPlayerObj.Name
+            else
+                aa14.aa15 = nil
+            end
+
+            if aa6 then
+                if not aa14.aa15 then
                     Toggles.KickFastRagdoll:SetValue(false)
                     return
                 end
-                
+
                 -- ★ デストロイサーバーと同じラグを15本つける
-                KickFastLagActive = true
                 task.spawn(function()
-                    local cl = KickGrabEvents and KickGrabEvents:FindFirstChild("CreateGrabLine")
-                    while KickFastLagActive do
+                    local cl = aa5:FindFirstChild("CreateGrabLine")
+                    while aa6 do
                         if cl then
-                            local sl = workspace:FindFirstChild("SpawnLocation") or workspace:FindFirstChild("Spawn") or (localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart"))
+                            local sl = workspace:FindFirstChild("SpawnLocation") or workspace:FindFirstChild("Spawn") or (aa4.Character and aa4.Character:FindFirstChild("HumanoidRootPart"))
                             if sl then
                                 for i = 1, 15 do
                                     pcall(function() cl:FireServer(sl, CFrame.new(math.random(-1e9, 1e9), 0, math.random(-1e9, 1e9))) end)
@@ -4791,93 +4868,96 @@ do
                     end
                 end)
 
-                -- Grab Kick ロジック
                 task.spawn(function()
-                    while KickFastActive do
-                        local targetChar, targetHum = getTargetChar()
-                        local myChar = localPlayer.Character
-                        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                        
-                        if targetChar and myRoot then
-                            local dist = (myRoot.Position - targetChar.Position).Magnitude
-                            if dist > 25 then
-                                local origCF = targetChar.CFrame
-                                targetChar.CFrame = myRoot.CFrame * CFrame.new(0, 0, 2)
-                                for _ = 1, 15 do
-                                    if KickGrabEvents and KickGrabEvents.SetNetworkOwner then
-                                        pcall(function() KickGrabEvents.SetNetworkOwner:FireServer(myRoot, myRoot.CFrame) end)
-                                    end
-                                    task.wait()
+                    while aa6 do
+                        -- ソースの aa21(aa7) の代わりに、Clyrixのターゲットを直接参照
+                        local aa62 = aa14.aa15 and aa1:FindFirstChild(aa14.aa15)
+                        local aa63 = aa4.Character
+                        local aa64 = aa63 and aa63:FindFirstChild("HumanoidRootPart")
+
+                        if aa62 and aa64 then
+                            local aa65 = aa62.Character
+                            local aa66 = aa65 and aa65:FindFirstChild("HumanoidRootPart")
+
+                            if aa66 then
+                                local aa67 = (aa64.Position - aa66.Position).Magnitude
+                                if aa67 > aa9 then
+                                    aa25(aa62, aa64)
                                 end
-                                targetChar.CFrame = origCF
+
+                                aa11:FireServer(aa66, aa66.CFrame)
+                                if aa5:FindFirstChild("DestroyGrabLine") then
+                                    aa5.DestroyGrabLine:FireServer(aa66)
+                                end
+
+                                aa66.AssemblyLinearVelocity = Vector3.zero
+                                aa66.AssemblyAngularVelocity = Vector3.zero
+
+                                local aa68 = aa66:FindFirstChild("ControlBP")
+                                if not aa68 then
+                                    aa68 = Instance.new("BodyPosition")
+                                    aa68.Name = "ControlBP"
+                                    aa68.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                                    aa68.P = 800000
+                                    aa68.Parent = aa66
+                                end
+                                aa68.Position = aa64.Position + Vector3.new(5, 10, 5)
                             end
-                            
-                            if KickGrabEvents and KickGrabEvents.SetNetworkOwner then
-                                pcall(function() KickGrabEvents.SetNetworkOwner:FireServer(targetChar, targetChar.CFrame) end)
-                            end
-                            if KickGrabEvents and KickGrabEvents.DestroyGrabLine then
-                                pcall(function() KickGrabEvents.DestroyGrabLine:FireServer(targetChar) end)
-                            end
-                            targetChar.AssemblyLinearVelocity = Vector3.zero
-                            targetChar.AssemblyAngularVelocity = Vector3.zero
-                            
-                            local bp = targetChar:FindFirstChild("ControlBP")
-                            if not bp then
-                                bp = Instance.new("BodyPosition")
-                                bp.Name = "ControlBP"
-                                bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                                bp.P = 800000
-                                bp.Parent = targetChar
-                            end
-                            bp.Position = myRoot.Position + Vector3.new(5, 10, 5)
                         end
                         task.wait()
                     end
-                    
-                    local targetChar = getTargetChar()
-                    if targetChar and targetChar:FindFirstChild("ControlBP") then
-                        targetChar.ControlBP:Destroy()
+
+                    local aa69 = aa14.aa15 and aa1:FindFirstChild(aa14.aa15)
+                    if aa69 and aa69.Character then
+                        local aa70 = aa69.Character:FindFirstChild("HumanoidRootPart")
+                        if aa70 and aa70:FindFirstChild("ControlBP") then
+                            aa70.ControlBP:Destroy()
+                        end
                     end
                 end)
 
-                -- Pallet Ragdoll RenderStepped
-                local folder = workspace:FindFirstChild(localPlayer.Name.."SpawnedInToys")
-                KickFastConnect = RunService.RenderStepped:Connect(function()
-                    if not KickFastActive then return end
-                    local targetChar, targetHum = getTargetChar()
-                    if not targetChar or not targetHum then return end
-                    
-                    if KickFastPallet and KickFastPallet:IsDescendantOf(workspace) then
-                        local sp = KickFastPallet:FindFirstChild("SoundPart")
-                        if sp then
-                            if not sp:FindFirstChild("PartOwner") then
-                                KickFastPallet:Destroy() KickFastPallet = nil
+                local aa71 = workspace:FindFirstChild(aa4.Name.."SpawnedInToys")
+                local aa72 = nil
+
+                aa16["aa73"] = aa3.RenderStepped:Connect(function()
+                    if not aa12.aa13 then return end
+                    if not aa14.aa15 then return end
+
+                    local aa74 = aa1:FindFirstChild(aa14.aa15)
+                    if not aa74 or not aa74.Character then return end
+
+                    local aa75 = aa74.Character:FindFirstChild("HumanoidRootPart")
+                    local aa76 = aa74.Character:FindFirstChild("Humanoid")
+                    if not aa75 or not aa76 then return end
+
+                    if aa72 and aa72:IsDescendantOf(workspace) then
+                        local aa77 = aa72:FindFirstChild("SoundPart")
+                        if aa77 then
+                            if not aa37(aa77, "PartOwner") then
+                                aa72:Destroy()
+                                aa72 = nil
                             end
                         else
-                            KickFastPallet:Destroy() KickFastPallet = nil
+                            aa72:Destroy()
+                            aa72 = nil
                         end
                     end
-                    
-                    if not KickFastSpawning and (not KickFastPallet or not KickFastPallet:IsDescendantOf(workspace)) then
-                        KickFastPallet = folder and folder:FindFirstChild("RagdollPalete") or LocalMakePallet()
+
+                    if not aa17 and (not aa72 or not aa72:IsDescendantOf(workspace)) then
+                        aa72 = aa71 and aa71:FindFirstChild("RagdollPalete") or aa50()
                     end
-                    
-                    if KickFastPallet and KickFastPallet:FindFirstChild("SoundPart") then
-                        local rag = targetHum:FindFirstChild("Ragdolled")
-                        if rag and not rag.Value then
-                            KickFastPallet.SoundPart.Position = targetChar.Position
+
+                    if aa72 and aa72:FindFirstChild("SoundPart") then
+                        local aa78 = aa76:FindFirstChild("Ragdolled")
+                        if aa78 and not aa78.Value then
+                            aa72.SoundPart.Position = aa75.Position
                         end
                     end
                 end)
-
             else
-                -- OFF時のクリーンアップ
-                KickFastLagActive = false
-                if KickFastConnect then KickFastConnect:Disconnect() KickFastConnect = nil end
-                
-                local targetChar = getTargetChar()
-                if targetChar and targetChar:FindFirstChild("ControlBP") then
-                    targetChar.ControlBP:Destroy()
+                if aa16["aa73"] then
+                    aa16["aa73"]:Disconnect()
+                    aa16["aa73"] = nil
                 end
             end
         end,
