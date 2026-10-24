@@ -10897,7 +10897,310 @@ end)
 if not toyOK then
     warn("[Clyrix] Toy init error: " .. tostring(toyErr))
 end
+-- ============================================================
+-- Black Hole (Ring) Logic
+-- ============================================================
+do
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local Workspace = game:GetService("Workspace")
+    local ToyLocalPlayer = Players.LocalPlayer
 
+    local function ToyNotify(title, text, duration)
+        Library:Notify({Title = title, Description = text, Time = duration or 3})
+    end
+
+    local function GetToyFolders()
+        local folders = {}
+        if BlackHole.SearchMode == "My Toys" or BlackHole.SearchMode == "All Toys" then
+            local myFolder = Workspace:FindFirstChild(ToyLocalPlayer.Name .. "SpawnedInToys")
+            if myFolder then table.insert(folders, myFolder) end
+        end
+        if BlackHole.SearchMode == "Plot Toys" or BlackHole.SearchMode == "All Toys" then
+            local plotsFolder = Workspace:FindFirstChild("Plots")
+            if plotsFolder then
+                for i = 1, 5 do
+                    local plot = plotsFolder:FindFirstChild("Plot" .. i)
+                    if plot then
+                        local ownersFolder = plot:FindFirstChild("PlotSign") and plot.PlotSign:FindFirstChild("ThisPlotsOwners")
+                        if ownersFolder then
+                            for _, v in ipairs(ownersFolder:GetChildren()) do
+                                if v:IsA("ValueBase") and v.Value == ToyLocalPlayer.Name then
+                                    local plotItemsFolder = Workspace:FindFirstChild("PlotItems")
+                                    if plotItemsFolder and plotItemsFolder:FindFirstChild(plot.Name) then
+                                        table.insert(folders, plotItemsFolder:FindFirstChild(plot.Name))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return folders
+    end
+
+    local BlackHole = {}
+    BlackHole.isActive      = false
+    BlackHole.SelectedItem  = "TetracubeI"
+    BlackHole.SearchMode    = "My Toys"
+
+    BlackHole.HeadOffsetY   = 9
+    BlackHole.RingRadius    = 10
+    BlackHole.OrbitSpeed    = 2
+    BlackHole.Direction     = 1
+    BlackHole.ToyOffsetX    = 0
+    BlackHole.ToyOffsetY    = 90
+    BlackHole.ToyOffsetZ    = 0
+    BlackHole.PhysicsP      = 15000
+    BlackHole.PhysicsD      = 200
+
+    BlackHole.TimeCounter   = 0
+    BlackHole.Toys          = {}
+    BlackHole.RunConnection = nil
+
+    local function SetupBHPhysics(part)
+        local BP = part:FindFirstChildOfClass("BodyPosition") or Instance.new("BodyPosition")
+        local BG = part:FindFirstChildOfClass("BodyGyro") or Instance.new("BodyGyro")
+        BP.P = BlackHole.PhysicsP
+        BP.D = BlackHole.PhysicsD
+        BP.MaxForce = Vector3.new(1, 1, 1) * 1e10
+        BP.Parent = part
+        BG.P = BlackHole.PhysicsP
+        BG.D = BlackHole.PhysicsD
+        BG.MaxTorque = Vector3.new(1, 1, 1) * 1e10
+        BG.Parent = part
+        return BG, BP
+    end
+
+    local function CleanupBlackHole(dropToys)
+        for _, toy in ipairs(BlackHole.Toys) do
+            if toy.BP then pcall(function() toy.BP:Destroy() end) end
+            if toy.BG then pcall(function() toy.BG:Destroy() end) end
+            if dropToys and toy.model and toy.model.Parent then
+                for _, obj in ipairs(toy.model:GetDescendants()) do
+                    if obj:IsA("BasePart") then
+                        pcall(function() obj.CanCollide = true end)
+                    end
+                end
+            end
+        end
+        BlackHole.Toys = {}
+
+        if BlackHole.RunConnection then
+            pcall(function() BlackHole.RunConnection:Disconnect() end)
+            BlackHole.RunConnection = nil
+        end
+    end
+
+    local function BuildBlackHole()
+        CleanupBlackHole(false)
+        local folders = GetToyFolders()
+        local found = {}
+        for _, folder in ipairs(folders) do
+            for _, x in ipairs(folder:GetDescendants()) do
+                if x:IsA("Model") and x.Name == BlackHole.SelectedItem then
+                    table.insert(found, x)
+                end
+            end
+        end
+
+        if #found == 0 then
+            ToyNotify("Black Hole", "Target item not found", 3)
+            return false
+        end
+
+        local total = #found
+        for i, toyModel in ipairs(found) do
+            local part = toyModel:FindFirstChild("SoundPart")
+                or toyModel:FindFirstChild("Handle")
+                or toyModel:FindFirstChildWhichIsA("BasePart")
+            if part then
+                for _, child in pairs(toyModel:GetChildren()) do
+                    if child:IsA("BasePart") then child.CanCollide = false end
+                end
+                local BG, BP = SetupBHPhysics(part)
+                local angleOffset = ((i - 1) / total) * math.pi * 2
+
+                table.insert(BlackHole.Toys, {
+                    part        = part,
+                    model       = toyModel,
+                    BP          = BP,
+                    BG          = BG,
+                    angleOffset = angleOffset,
+                })
+            end
+        end
+        return true
+    end
+
+    local function StartBlackHoleAnimation()
+        if BlackHole.RunConnection then
+            pcall(function() BlackHole.RunConnection:Disconnect() end)
+        end
+
+        BlackHole.RunConnection = RunService.RenderStepped:Connect(function(dt)
+            if not BlackHole.isActive or #BlackHole.Toys == 0 then return end
+            local char = ToyLocalPlayer.Character
+            if not char then return end
+            local head = char:FindFirstChild("Head")
+            if not head then return end
+
+            local centerPos = head.Position + Vector3.new(0, BlackHole.HeadOffsetY, 0)
+            BlackHole.TimeCounter = BlackHole.TimeCounter + dt * BlackHole.OrbitSpeed * BlackHole.Direction
+
+            for _, toy in ipairs(BlackHole.Toys) do
+                if toy.part and toy.part.Parent then
+                    local angle = BlackHole.TimeCounter + toy.angleOffset
+                    local outward = Vector3.new(math.cos(angle), 0, math.sin(angle))
+                    local worldPos = centerPos + outward * BlackHole.RingRadius
+                    local tangent = Vector3.new(-math.sin(angle), 0, math.cos(angle)) * BlackHole.Direction
+                    
+                    local baseCF = CFrame.lookAt(worldPos, worldPos + tangent, Vector3.new(0, 1, 0))
+                    local finalCF = baseCF * CFrame.Angles(
+                        math.rad(BlackHole.ToyOffsetX), 
+                        math.rad(BlackHole.ToyOffsetY), 
+                        math.rad(BlackHole.ToyOffsetZ)
+                    )
+
+                    pcall(function()
+                        toy.BP.P = BlackHole.PhysicsP
+                        toy.BG.P = BlackHole.PhysicsP
+                        toy.BP.Position = worldPos
+                        toy.BG.CFrame = finalCF
+                    end)
+                end
+            end
+        end)
+    end
+
+    local function ToggleBlackHole(enabled)
+        if enabled then
+            if BuildBlackHole() then
+                BlackHole.isActive = true
+                StartBlackHoleAnimation()
+                ToyNotify("Black Hole", "Activated", 3)
+            else
+                BlackHole.isActive = false
+            end
+        else
+            BlackHole.isActive = false
+            CleanupBlackHole(true)
+            ToyNotify("Black Hole", "Deactivated (toys dropped)", 3)
+        end
+    end
+
+    -- ★ 安全対策：ToyLocalPlayer が存在する場合のみ監視する
+    if ToyLocalPlayer then
+        ToyLocalPlayer.CharacterAdded:Connect(function()
+            if BlackHole.isActive then
+                task.defer(function()
+                    if BlackHole.isActive then pcall(BuildBlackHole) end
+                end)
+            end
+        end)
+    end
+
+    -- ============================================================
+    -- Black Hole UI
+    -- ============================================================
+    local RingSettingGroup = Tabs.ToyTab:AddLeftGroupbox("Ring setting", "settings")
+    local RingGroup = Tabs.ToyTab:AddRightGroupbox("Ring", "circle")
+
+    -- 左側: 設定系
+    RingSettingGroup:AddDropdown("BHItem", {
+        Text = "Select Item",
+        Values = { "TetracubeI", "FireworkSparkler", "PoopPile", "BallSnowball", "CreatureBlobman" },
+        Default = "TetracubeI",
+        Callback = function(v)
+            BlackHole.SelectedItem = v
+            if BlackHole.isActive then pcall(BuildBlackHole) end
+        end,
+    })
+
+    RingSettingGroup:AddDropdown("BHSearch", {
+        Text = "Search Range",
+        Values = { "My Toys", "Plot Toys", "All Toys" },
+        Default = "My Toys",
+        Callback = function(v)
+            BlackHole.SearchMode = v
+            if BlackHole.isActive then pcall(BuildBlackHole) end
+        end,
+    })
+
+    RingSettingGroup:AddDivider("Ring Settings")
+    RingSettingGroup:AddSlider("BHHeadY", {
+        Text = "Head Offset Y", Default = 9, Min = 0, Max = 20, Rounding = 1,
+        Callback = function(v) BlackHole.HeadOffsetY = v end,
+    })
+    RingSettingGroup:AddSlider("BHRadius", {
+        Text = "Ring Radius", Default = 10, Min = 2, Max = 25, Rounding = 1,
+        Callback = function(v) BlackHole.RingRadius = v end,
+    })
+    RingSettingGroup:AddSlider("BHOrbitSpeed", {
+        Text = "Orbit Speed", Default = 2, Min = 0, Max = 10, Rounding = 1,
+        Callback = function(v) BlackHole.OrbitSpeed = v end,
+    })
+    RingSettingGroup:AddDropdown("BHDirection", {
+        Text = "Direction",
+        Values = { "Normal", "Reversed" },
+        Default = "Normal",
+        Callback = function(v)
+            BlackHole.Direction = (v == "Reversed") and -1 or 1
+        end,
+    })
+
+    RingSettingGroup:AddDivider("Toy Orientation Fix")
+    RingSettingGroup:AddSlider("BHToyX", {
+        Text = "Toy Offset X", Default = 0, Min = -180, Max = 180, Rounding = 0, Suffix = "deg",
+        Callback = function(v) BlackHole.ToyOffsetX = v end,
+    })
+    RingSettingGroup:AddSlider("BHToyY", {
+        Text = "Toy Offset Y", Default = 90, Min = -180, Max = 180, Rounding = 0, Suffix = "deg",
+        Callback = function(v) BlackHole.ToyOffsetY = v end,
+    })
+    RingSettingGroup:AddSlider("BHToyZ", {
+        Text = "Toy Offset Z", Default = 0, Min = -180, Max = 180, Rounding = 0, Suffix = "deg",
+        Callback = function(v) BlackHole.ToyOffsetZ = v end,
+    })
+
+    -- 右側: アクション系
+    RingGroup:AddToggle("BHToggle", {
+        Text = "Enable Black Hole",
+        Default = false,
+        Callback = function(state)
+            ToggleBlackHole(state)
+        end,
+    })
+
+    RingGroup:AddButton({
+        Text = "Reset All Settings",
+        Func = function()
+            BlackHole.HeadOffsetY    = 9
+            BlackHole.RingRadius     = 10
+            BlackHole.OrbitSpeed     = 2
+            BlackHole.Direction      = 1
+            BlackHole.ToyOffsetX     = 0
+            BlackHole.ToyOffsetY     = 90
+            BlackHole.ToyOffsetZ     = 0
+            BlackHole.PhysicsP       = 15000
+            BlackHole.PhysicsD       = 200
+
+            pcall(function()
+                if Options.BHHeadY then Options.BHHeadY:SetValue(9) end
+                if Options.BHRadius then Options.BHRadius:SetValue(10) end
+                if Options.BHOrbitSpeed then Options.BHOrbitSpeed:SetValue(2) end
+                if Options.BHDirection then Options.BHDirection:SetValue("Normal") end
+                if Options.BHToyX then Options.BHToyX:SetValue(0) end
+                if Options.BHToyY then Options.BHToyY:SetValue(90) end
+                if Options.BHToyZ then Options.BHToyZ:SetValue(0) end
+            end)
+
+            if BlackHole.isActive then pcall(BuildBlackHole) end
+            ToyNotify("Black Hole", "Settings reset", 2)
+        end,
+    })
+end
 -- =====================================================
 -- Dev タブ: Developer Info
 -- =====================================================
