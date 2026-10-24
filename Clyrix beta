@@ -6472,6 +6472,127 @@ HouseGroup:AddButton({
 })
 
 -- ============================================================
+-- HOUSE: Barrier Break
+-- ============================================================
+
+HouseGroup:AddButton({
+    Text = "Barrier Break",
+    Func = function()
+        local character = localPlayer.Character
+        if not character then return end
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        local humanoid         = character:FindFirstChildOfClass("Humanoid")
+        if not humanoidRootPart or not humanoid then return end
+
+        local originalCFrame    = humanoidRootPart.CFrame
+        local originalWalkSpeed = humanoid.WalkSpeed
+        humanoid.WalkSpeed = 0
+
+        replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(
+            "InstrumentWoodwindOcarina",
+            CFrame.new(184.148834, -5.54824972, 498.136749),
+            Vector3.new(0, 34, 0)
+        )
+        task.wait(0.4)
+
+        local spawnedToys = Workspace:FindFirstChild(localPlayer.Name .. "SpawnedInToys")
+        local ocarina     = spawnedToys and spawnedToys:FindFirstChild("InstrumentWoodwindOcarina")
+
+        if not ocarina then
+            humanoid.WalkSpeed = originalWalkSpeed
+            Library:Notify({Title = "Barrier Break", Description = "Ocarina not found", Time = 3})
+            return
+        end
+
+        ocarina.HoldPart.HoldItemRemoteFunction:InvokeServer(ocarina, Workspace[localPlayer.Name])
+        humanoidRootPart.CFrame = CFrame.new(304.06, 25.77, 488.54)
+        task.wait(0.2)
+        replicatedStorage.MenuToys.DestroyToy:FireServer(ocarina)
+        humanoidRootPart.CFrame = originalCFrame
+        task.wait(0.7)
+        replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(
+            "Campfire",
+            CFrame.new(257.638672, -5.57392979, 450.103638),
+            Vector3.new(0, 161.97, 0)
+        )
+        humanoid.WalkSpeed = originalWalkSpeed
+        Library:Notify({Title = "Barrier Break", Description = "Completed", Time = 3})
+    end,
+})
+
+local autoBarrierEnabled = false
+HouseGroup:AddToggle("AutoBarrierBreak", {
+    Text = "Auto Barrier Break (Beta)",
+    Default = false,
+    Callback = function(state)
+        autoBarrierEnabled = state
+        if not state then return end
+
+        task.spawn(function()
+            while autoBarrierEnabled do
+                local character = localPlayer.Character
+                if character then
+                    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+                    local humanoid         = character:FindFirstChildOfClass("Humanoid")
+
+                    if humanoidRootPart and humanoid then
+                        local originalWalkSpeed = humanoid.WalkSpeed
+                        humanoid.WalkSpeed = 0
+
+                        replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(
+                            "InstrumentWoodwindOcarina",
+                            CFrame.new(184.148834, -5.54824972, 498.136749),
+                            Vector3.new(0, 34, 0)
+                        )
+                        task.wait(0.5)
+
+                        local spawnedToys = Workspace:FindFirstChild(localPlayer.Name .. "SpawnedInToys")
+                        local ocarina     = spawnedToys and spawnedToys:FindFirstChild("InstrumentWoodwindOcarina")
+
+                        if ocarina then
+                            ocarina.HoldPart.HoldItemRemoteFunction:InvokeServer(ocarina, Workspace[localPlayer.Name])
+                            local originalCFrame = humanoidRootPart.CFrame
+                            humanoidRootPart.CFrame = CFrame.new(304.06, 25.77, 488.54)
+                            task.wait(0.185)
+                            replicatedStorage.MenuToys.DestroyToy:FireServer(ocarina)
+                            humanoidRootPart.CFrame = originalCFrame
+                            task.wait(0.7)
+
+                            replicatedStorage.MenuToys.SpawnToyRemoteFunction:InvokeServer(
+                                "Campfire",
+                                CFrame.new(257.638672, -5.57392979, 450.103638),
+                                Vector3.new(0, 161.97, 0)
+                            )
+                            task.wait(0.5)
+
+                            local checkToys = Workspace:FindFirstChild(localPlayer.Name .. "SpawnedInToys")
+                            if checkToys and checkToys:FindFirstChild("Campfire") then
+                                humanoid.WalkSpeed = originalWalkSpeed
+                                Library:Notify({Title = "Barrier Break", Description = "Success!", Time = 2})
+                                autoBarrierEnabled = false
+                                if Toggles.AutoBarrierBreak then
+                                    Toggles.AutoBarrierBreak:SetValue(false)
+                                end
+                            else
+                                humanoid.WalkSpeed = originalWalkSpeed
+                                task.wait(0.5)
+                            end
+                        else
+                            humanoid.WalkSpeed = originalWalkSpeed
+                            task.wait(0.5)
+                        end
+                    else
+                        task.wait(0.3)
+                    end
+                else
+                    task.wait(0.3)
+                end
+            end
+        end)
+    end,
+})
+
+-- ============================================================
 -- 2. No Blob Settings (Left)
 -- ============================================================
 local NoBlobSettingsGroup = Tabs.ServerTab:AddLeftGroupbox("No Blob Settings")
