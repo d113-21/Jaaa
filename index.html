@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Script Loader Generator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    min-height: 100vh;
+    padding: 24px 16px;
+    display: flex;
+    justify-content: center;
+  }
+  .container {
+    width: 100%;
+    max-width: 640px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+    color: #58a6ff;
+  }
+  .subtitle {
+    font-size: 0.85rem;
+    color: #8b949e;
+    margin-bottom: 24px;
+  }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    color: #8b949e;
+    margin-bottom: 6px;
+    margin-top: 16px;
+  }
+  input, textarea {
+    width: 100%;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #e6edf3;
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus, textarea:focus {
+    border-color: #58a6ff;
+  }
+  textarea {
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 0.85rem;
+    resize: vertical;
+    min-height: 90px;
+    line-height: 1.5;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  button {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.05s;
+    font-family: inherit;
+  }
+  button:active { transform: scale(0.98); }
+  .btn-copy {
+    background: #238636;
+    color: #fff;
+  }
+  .btn-copy:hover { background: #2ea043; }
+  .btn-clear {
+    background: #21262d;
+    color: #e6edf3;
+    border: 1px solid #30363d;
+  }
+  .btn-clear:hover { background: #30363d; }
+  .status {
+    margin-top: 12px;
+    font-size: 0.8rem;
+    min-height: 1.2em;
+  }
+  .status.ok { color: #3fb950; }
+  .status.err { color: #f85149; }
+  .hint {
+    margin-top: 24px;
+    padding: 12px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: #8b949e;
+    line-height: 1.6;
+  }
+  .hint code {
+    background: #0d1117;
+    padding: 2px 5px;
+    border-radius: 3px;
+    color: #79c0ff;
+    font-family: monospace;
+  }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: #238636;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: transform 0.25s, opacity 0.25s;
+    pointer-events: none;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Script Loader Generator</h1>
+  <p class="subtitle">Raw URLを貼ると loadstring ローダーを自動生成します</p>
+
+  <label for="urlInput">スクリプトのURL (raw推奨)</label>
+  <input id="urlInput" type="url" placeholder="https://raw.githubusercontent.com/... または https://pastebin.com/raw/..." autocomplete="off" spellcheck="false">
+
+  <label for="output">生成されたコード</label>
+  <textarea id="output" readonly placeholder="URLを入力するとここに自動生成されます"></textarea>
+
+  <div class="row">
+    <button class="btn-copy" id="copyBtn">コピー</button>
+    <button class="btn-clear" id="clearBtn">クリア</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div class="hint">
+    <strong>対応する自動変換:</strong><br>
+    • GitHub <code>github.com/user/repo/blob/...</code> → <code>raw.githubusercontent.com</code><br>
+    • GitHub Gist <code>gist.github.com/...</code> → <code>gist.githubusercontent.com/.../raw</code><br>
+    • Pastebin <code>pastebin.com/XXXX</code> → <code>pastebin.com/raw/XXXX</code><br>
+    • Pastebin <code>pastebin.com/raw/XXXX</code> はそのまま<br>
+    <br>
+    <strong>注意:</strong> 他人のスクリプトを無断で読み込ませる行為は規約違反・著作権侵害になる場合があります。自分が作成した、または利用許諾のあるスクリプトにのみ使用してください。
+  </div>
+</div>
+
+<div class="toast" id="toast">コピーしました</div>
+
+<script>
+(function () {
+  const urlInput = document.getElementById('urlInput');
+  const output = document.getElementById('output');
+  const status = document.getElementById('status');
+  const copyBtn = document.getElementById('copyBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const toast = document.getElementById('toast');
+
+  // よくある共有URLをrawに変換
+  function toRawUrl(input) {
+    let url = input.trim();
+    if (!url) return '';
+
+    // GitHub blob -> raw
+    // https://github.com/user/repo/blob/branch/path -> https://raw.githubusercontent.com/user/repo/branch/path
+    const ghBlob = url.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/(.+)$/);
+    if (ghBlob) {
+      return `https://raw.githubusercontent.com/${ghBlob[1]}/${ghBlob[2]}/${ghBlob[3]}`;
+    }
+
+    // GitHub Gist -> raw
+    // https://gist.github.com/user/id -> https://gist.githubusercontent.com/user/id/raw
+    const gist = url.match(/^https?:\/\/gist\.github\.com\/([^\/]+)\/([^\/]+)(?:\/.*)?$/);
+    if (gist && !url.includes('/raw')) {
+      return `https://gist.githubusercontent.com/${gist[1]}/${gist[2]}/raw`;
+    }
+
+    // Pastebin -> raw
+    // https://pastebin.com/XXXX -> https://pastebin.com/raw/XXXX
+    const pastebin = url.match(/^https?:\/\/pastebin\.com\/([A-Za-z0-9]+)$/);
+    if (pastebin) {
+      return `https://pastebin.com/raw/${pastebin[1]}`;
+    }
+
+    return url;
+  }
+
+  // Lua文字列エスケープ
+  function escapeLuaString(str) {
+    return str
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r');
+  }
+
+  function generate() {
+    const raw = urlInput.value.trim();
+    if (!raw) {
+      output.value = '';
+      status.textContent = '';
+      status.className = 'status';
+      return;
+    }
+
+    const finalUrl = toRawUrl(raw);
+
+    if (!/^https?:\/\//i.test(finalUrl)) {
+      output.value = '';
+      status.textContent = '⚠ http:// または https:// で始まるURLを入力してください';
+      status.className = 'status err';
+      return;
+    }
+
+    const code = `loadstring(game:HttpGet("${escapeLuaString(finalUrl)}"))()`;
+    output.value = code;
+
+    if (finalUrl !== raw) {
+      status.textContent = '✓ raw URLに自動変換しました';
+    } else {
+      status.textContent = '✓ 生成しました';
+    }
+    status.className = 'status ok';
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove('show'), 1600);
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // フォールバック（古いブラウザ/非HTTPS環境）
+      output.removeAttribute('readonly');
+      output.select();
+      output.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      output.setAttribute('readonly', '');
+      return ok;
+    }
+  }
+
+  urlInput.addEventListener('input', generate);
+
+  copyBtn.addEventListener('click', async () => {
+    const text = output.value.trim();
+    if (!text) {
+      showToast('URLを入力してください');
+      return;
+    }
+    const ok = await copyText(text);
+    showToast(ok ? 'コピーしました' : 'コピー失敗');
+  });
+
+  clearBtn.addEventListener('click', () => {
+    urlInput.value = '';
+    generate();
+    urlInput.focus();
+  });
+})();
+</script>
+</body>
+</html>
