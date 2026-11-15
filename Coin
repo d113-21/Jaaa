@@ -1,0 +1,140 @@
+local Players = game:GetService("Players")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- 固定設定
+local FIXED_ASSET      = "rbxassetid://138925204990569"
+local FIXED_FONT       = Enum.Font.PermanentMarker
+local FIXED_TEXT_COLOR = Color3.fromRGB(255, 255, 255)
+local FIXED_FRAME_BG   = Color3.fromRGB(0, 0, 0)
+
+local RING_THICKNESS   = 2
+local ROTATE_STEP      = 3
+local ROTATE_WAIT      = 0.02
+
+local animStarted = false
+
+local function getRefs()
+    local menuGui = PlayerGui:FindFirstChild("MenuGui")
+    if not menuGui then return nil end
+    local topRight = menuGui:FindFirstChild("TopRight")
+    if not topRight then return nil end
+    local frame = topRight:FindFirstChild("CoinsFrame")
+    if not frame then return nil end
+    local display = frame:FindFirstChild("CoinsDisplay")
+    if not display then return nil end
+    local image = display:FindFirstChild("CoinImage")
+    local text  = display:FindFirstChild("Coins")
+    return { frame = frame, display = display, image = image, text = text }
+end
+
+local function startRingAnimation()
+    if animStarted then return end
+    animStarted = true
+    task.spawn(function()
+        local rot = 0
+        while true do
+            local r = getRefs()
+            if r and r.frame then
+                local s = r.frame:FindFirstChildOfClass("UIStroke")
+                local g = s and s:FindFirstChildOfClass("UIGradient")
+                if g then
+                    rot = (rot + ROTATE_STEP) % 360
+                    g.Rotation = rot
+                end
+            end
+            task.wait(ROTATE_WAIT)
+        end
+    end)
+end
+
+local function applyAll()
+    local r = getRefs()
+    if not r then return false end
+
+    if r.image then
+        r.image.Image = FIXED_ASSET
+    end
+
+    if r.text then
+        r.text.Font = FIXED_FONT
+        r.text.TextColor3 = FIXED_TEXT_COLOR
+        for _, child in ipairs(r.text:GetChildren()) do
+            if child:IsA("UIGradient") then
+                child.Enabled = false
+            end
+        end
+    end
+
+    r.frame.BackgroundColor3 = FIXED_FRAME_BG
+    r.frame.BackgroundTransparency = 0
+
+    if not r.frame:FindFirstChildOfClass("UICorner") then
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(1, 0)
+        c.Parent = r.frame
+    end
+
+    local stroke = r.frame:FindFirstChildOfClass("UIStroke")
+    if not stroke then
+        stroke = Instance.new("UIStroke")
+        stroke.Parent = r.frame
+    end
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = RING_THICKNESS
+    stroke.Transparency = 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+    local grad = stroke:FindFirstChildOfClass("UIGradient")
+    if not grad then
+        grad = Instance.new("UIGradient")
+        grad.Parent = stroke
+    end
+    grad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.35, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.45, Color3.fromRGB(0, 0, 0)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(0, 0, 0)),
+        ColorSequenceKeypoint.new(0.65, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 255, 255)),
+    })
+
+    startRingAnimation()
+    return true
+end
+
+-- 起動時：MenuGui が生成されるのを待って自動適用
+task.spawn(function()
+    while not applyAll() do
+        task.wait(0.3)
+    end
+
+    -- MenuGui が作り直されたら再適用
+    local function watchMenuGui()
+        local menuGui = PlayerGui:FindFirstChild("MenuGui")
+        if not menuGui then
+            task.wait(0.5)
+            return watchMenuGui()
+        end
+        menuGui.AncestryChanged:Connect(function()
+            if not menuGui:IsDescendantOf(PlayerGui) then
+                task.spawn(function()
+                    while not applyAll() do
+                        task.wait(0.3)
+                    end
+                    watchMenuGui()
+                end)
+            end
+        end)
+    end
+    watchMenuGui()
+end)
+
+-- メンテナンスループ（AutomaticSize 変化や再設定に追従）
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        applyAll()
+    end
+end)
