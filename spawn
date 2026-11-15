@@ -1,0 +1,89 @@
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+
+local assetId = 117051618193173
+
+-- デカールIDから実際の画像を取得する処理
+local function GetImageFromDecal(id)
+    local apiUrl = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. tostring(id) .. "&size=420x420&format=Png"
+    local success, response = pcall(function()
+        return game:HttpGet(apiUrl)
+    end)
+    
+    if success and response then
+        local jsonSuccess, data = pcall(function()
+            return HttpService:JSONDecode(response)
+        end)
+        if jsonSuccess and data and data.data and data.data[1] and data.data[1].imageUrl then
+            local imageUrl = data.data[1].imageUrl
+            if writefile and getcustomasset then
+                local fileName = "SpawnSpin_" .. tostring(tick()) .. ".png"
+                local dlSuccess = pcall(function()
+                    writefile(fileName, game:HttpGet(imageUrl))
+                end)
+                if dlSuccess then
+                    local assetSuccess, assetIdResult = pcall(function()
+                        return getcustomasset(fileName)
+                    end)
+                    if assetSuccess then
+                        return assetIdResult
+                    end
+                end
+            end
+            return "rbxthumb://type=Asset&id=" .. tostring(id) .. "&w=420&h=420"
+        end
+    end
+    return "rbxassetid://" .. tostring(id) -- 取得に失敗した場合のフォールバック
+end
+
+local finalImage = GetImageFromDecal(assetId)
+
+-- 回転処理
+local rotatingImages = {}
+RunService.RenderStepped:Connect(function()
+    local t = tick() * 100
+    for _, img in pairs(rotatingImages) do
+        if img.Parent then
+            img.Rotation = t % 360
+        else
+            rotatingImages[img] = nil
+        end
+    end
+end)
+
+-- SpawnLocationに適用
+for _, obj in ipairs(workspace:GetDescendants()) do
+    if obj:IsA("SpawnLocation") then
+        -- 既存のテクスチャやデカールを削除
+        for _, child in ipairs(obj:GetChildren()) do
+            if child:IsA("Decal") or child:IsA("Texture") or child:IsA("SurfaceGui") then
+                child:Destroy()
+            end
+        end
+        
+        -- 下地を白くツルツルにする
+        obj.TopSurface = Enum.SurfaceType.Smooth
+        obj.Material = Enum.Material.SmoothPlastic
+        obj.Color = Color3.fromRGB(255, 255, 255)
+        
+        -- SurfaceGuiを直接貼り付け
+        local sg = Instance.new("SurfaceGui")
+        sg.Name = "RotatingTextureGUI"
+        sg.Face = Enum.NormalId.Top
+        sg.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+        sg.PixelsPerStud = 100
+        sg.LightInfluence = 0
+        sg.Parent = obj
+        
+        local img = Instance.new("ImageLabel")
+        img.Name = "RotatingImage"
+        img.Size = UDim2.fromScale(1, 1)
+        img.BackgroundTransparency = 1
+        img.Image = finalImage
+        img.AnchorPoint = Vector2.new(0.5, 0.5)
+        img.Position = UDim2.fromScale(0.5, 0.5)
+        img.Parent = sg
+        
+        table.insert(rotatingImages, img)
+    end
+end
