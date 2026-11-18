@@ -5,13 +5,30 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- 固定設定
 local FIXED_ASSET      = "rbxassetid://138925204990569"
-local FIXED_FONT       = Enum.Font.PermanentMarker
 local FIXED_TEXT_COLOR = Color3.fromRGB(255, 255, 255)
 local FIXED_FRAME_BG   = Color3.fromRGB(0, 0, 0)
 
 local RING_THICKNESS   = 2
 local ROTATE_STEP      = 3
 local ROTATE_WAIT      = 0.02
+
+-- フォントリスト
+local FONT_LIST = {
+    {name = "Arcade",          font = Enum.Font.Arcade},
+    {name = "PermanentMarker", font = Enum.Font.PermanentMarker},
+    {name = "GothamBlack",     font = Enum.Font.GothamBlack},
+    {name = "GothamBold",      font = Enum.Font.GothamBold},
+    {name = "SciFi",           font = Enum.Font.SciFi},
+    {name = "Bangers",         font = Enum.Font.Bangers},
+    {name = "LuckiestGuy",     font = Enum.Font.LuckiestGuy},
+    {name = "Creepster",       font = Enum.Font.Creepster},
+    {name = "Fantasy",         font = Enum.Font.Fantasy},
+    {name = "Code",            font = Enum.Font.Code},
+    {name = "Cartoon",         font = Enum.Font.Cartoon},
+    {name = "Antique",         font = Enum.Font.Antique},
+}
+local fontIndex = 1 -- Arcade
+local FIXED_FONT = FONT_LIST[fontIndex].font
 
 local animStarted = false
 
@@ -91,12 +108,14 @@ local function applyAll()
         grad = Instance.new("UIGradient")
         grad.Parent = stroke
     end
+
+    -- 黒い部分がはっきり流れるように調整
     grad.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.35, Color3.fromRGB(255, 255, 255)),
-        ColorSequenceKeypoint.new(0.45, Color3.fromRGB(0, 0, 0)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(0, 0, 0)),
-        ColorSequenceKeypoint.new(0.65, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.30, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.40, Color3.fromRGB(0, 0, 0)),
+        ColorSequenceKeypoint.new(0.60, Color3.fromRGB(0, 0, 0)),
+        ColorSequenceKeypoint.new(0.70, Color3.fromRGB(255, 255, 255)),
         ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 255, 255)),
     })
 
