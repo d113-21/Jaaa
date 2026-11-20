@@ -1,0 +1,237 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- 設定
+local CORNER_RADIUS = 4
+local BACKGROUND = Color3.fromRGB(20, 20, 25)
+local TEXT_COLOR = Color3.fromRGB(255, 255, 255)
+local STROKE_COLOR = Color3.fromRGB(255, 255, 255)
+
+-- UI作成
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ClyrixWatermark"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999999999
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = CoreGui
+
+-- メインのテキストフレーム（画面中央上・移動不可）
+local frame = Instance.new("Frame")
+frame.Name = "Watermark"
+frame.Size = UDim2.new(0, 200, 0, 26)
+frame.Position = UDim2.new(0.5, -100, 0, 12)
+frame.BackgroundColor3 = BACKGROUND
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = false  -- 動かせないように変更
+frame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, CORNER_RADIUS)
+corner.Parent = frame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = STROKE_COLOR
+stroke.Thickness = 1.2
+stroke.Transparency = 0.25
+stroke.Parent = frame
+
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -10, 1, 0)
+label.Position = UDim2.new(0, 5, 0, 0)
+label.BackgroundTransparency = 1
+label.Text = "Clyrix | --:--:-- | 0 FPS | 0 ms"
+label.Font = Enum.Font.Code
+label.TextSize = 13
+label.TextColor3 = TEXT_COLOR
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Parent = frame
+
+-- ＋ボタン
+local plusFrame = Instance.new("Frame")
+plusFrame.Name = "PlusFrame"
+plusFrame.Size = UDim2.new(0, 22, 0, 22)
+plusFrame.Position = UDim2.new(1, 6, 0.5, -11)
+plusFrame.BackgroundColor3 = BACKGROUND
+plusFrame.BorderSizePixel = 0
+plusFrame.Parent = frame
+
+local plusCorner = Instance.new("UICorner")
+plusCorner.CornerRadius = UDim.new(0, CORNER_RADIUS)
+plusCorner.Parent = plusFrame
+
+local plusStroke = Instance.new("UIStroke")
+plusStroke.Color = STROKE_COLOR
+plusStroke.Thickness = 1.2
+plusStroke.Transparency = 0.25
+plusStroke.Parent = plusFrame
+
+local plusBtn = Instance.new("TextButton")
+plusBtn.Name = "PlusButton"
+plusBtn.Size = UDim2.new(1, 0, 1, 0)
+plusBtn.BackgroundTransparency = 1
+plusBtn.Text = "+"
+plusBtn.Font = Enum.Font.Code
+plusBtn.TextSize = 15
+plusBtn.TextColor3 = TEXT_COLOR
+plusBtn.AutoButtonColor = false
+plusBtn.Parent = plusFrame
+
+-- ===================== アップデートログUI =====================
+local logGui = Instance.new("Frame")
+logGui.Name = "UpdateLog"
+logGui.Size = UDim2.new(0, 380, 0, 260)
+logGui.Position = UDim2.new(0.5, -190, 0.5, -130)
+logGui.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+logGui.BorderSizePixel = 0
+logGui.Visible = false
+logGui.Active = true
+logGui.Draggable = true
+logGui.Parent = screenGui
+
+local logCorner = Instance.new("UICorner")
+logCorner.CornerRadius = UDim.new(0, 8)
+logCorner.Parent = logGui
+
+local logStroke = Instance.new("UIStroke")
+logStroke.Color = Color3.fromRGB(255, 255, 255)
+logStroke.Thickness = 1.2
+logStroke.Transparency = 0.3
+logStroke.Parent = logGui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -50, 0, 36)
+title.Position = UDim2.new(0, 14, 0, 6)
+title.BackgroundTransparency = 1
+title.Text = "Update log"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 26
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = logGui
+
+local line = Instance.new("Frame")
+line.Size = UDim2.new(1, -20, 0, 1)
+line.Position = UDim2.new(0, 10, 0, 48)
+line.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+line.BorderSizePixel = 0
+line.Parent = logGui
+
+local version = Instance.new("TextLabel")
+version.Size = UDim2.new(1, -20, 0, 26)
+version.Position = UDim2.new(0, 14, 0, 58)
+version.BackgroundTransparency = 1
+version.Text = "・v6"
+version.Font = Enum.Font.Code
+version.TextSize = 18
+version.TextColor3 = Color3.fromRGB(255, 255, 255)
+version.TextXAlignment = Enum.TextXAlignment.Left
+version.Parent = logGui
+
+local content = Instance.new("TextLabel")
+content.Size = UDim2.new(1, -20, 0, 26)
+content.Position = UDim2.new(0, 14, 0, 86)
+content.BackgroundTransparency = 1
+content.Text = "+ Main Renewal"
+content.Font = Enum.Font.Code
+content.TextSize = 16
+content.TextColor3 = Color3.fromRGB(100, 180, 255)
+content.TextXAlignment = Enum.TextXAlignment.Left
+content.Parent = logGui
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 32, 0, 32)
+closeBtn.Position = UDim2.new(1, -40, 0, 6)
+closeBtn.BackgroundTransparency = 1
+closeBtn.Text = "×"
+closeBtn.Font = Enum.Font.Code
+closeBtn.TextSize = 24
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.AutoButtonColor = false
+closeBtn.Parent = logGui
+
+closeBtn.MouseButton1Click:Connect(function()
+    logGui.Visible = false
+end)
+
+local resizeHandle = Instance.new("TextButton")
+resizeHandle.Size = UDim2.new(0, 18, 0, 18)
+resizeHandle.Position = UDim2.new(1, -20, 1, -20)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Text = "◢"
+resizeHandle.Font = Enum.Font.Code
+resizeHandle.TextSize = 14
+resizeHandle.TextColor3 = Color3.fromRGB(180, 180, 180)
+resizeHandle.AutoButtonColor = false
+resizeHandle.Parent = logGui
+
+local resizing = false
+local startMouse, startSize
+
+resizeHandle.MouseButton1Down:Connect(function()
+    resizing = true
+    startMouse = UserInputService:GetMouseLocation()
+    startSize = logGui.AbsoluteSize
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = false
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if resizing then
+        local currentMouse = UserInputService:GetMouseLocation()
+        local delta = currentMouse - startMouse
+        local newWidth = math.clamp(startSize.X + delta.X, 280, 600)
+        local newHeight = math.clamp(startSize.Y + delta.Y, 180, 450)
+        logGui.Size = UDim2.new(0, newWidth, 0, newHeight)
+    end
+end)
+
+local function showLog()
+    logGui.Size = UDim2.new(0, 50, 0, 50)
+    logGui.Position = UDim2.new(0.5, -25, 0.5, -25)
+    logGui.Visible = true
+
+    local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local goal = {
+        Size = UDim2.new(0, 380, 0, 260),
+        Position = UDim2.new(0.5, -190, 0.5, -130)
+    }
+    TweenService:Create(logGui, tweenInfo, goal):Play()
+end
+
+plusBtn.MouseButton1Click:Connect(function()
+    if logGui.Visible then
+        logGui.Visible = false
+    else
+        showLog()
+    end
+end)
+
+-- 更新処理 + 幅自動調整
+local acc = 0
+RunService.Heartbeat:Connect(function(dt)
+    acc = acc + dt
+    if acc < 0.5 then return end
+    acc = 0
+
+    local currentTime = os.date("%H:%M:%S")
+    local fps = math.floor(Stats.Workspace.Heartbeat:GetValue())
+    local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+
+    label.Text = string.format("Clyrix | %s | %d FPS | %d ms", currentTime, fps, ping)
+
+    local textWidth = label.TextBounds.X
+    local newWidth = textWidth + 20
+    frame.Size = UDim2.new(0, newWidth, 0, 26)
+    frame.Position = UDim2.new(0.5, -newWidth / 2, 0, 12)
+end)
