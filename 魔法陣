@@ -1,0 +1,395 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+
+local function Notify(title, text, duration)
+	StarterGui:SetCore("SendNotification", {
+		Title = title,
+		Text = text,
+		Duration = duration
+	})
+end
+
+local player = Players.LocalPlayer
+
+local env = getgenv and getgenv() or _G
+if env.MagicCircleCleanup then
+	env.MagicCircleCleanup()
+end
+
+local ASSET_CENTER = "rbxassetid://139066505532746"
+local ASSET_MIDDLE = "rbxassetid://127892120927253"
+local ASSET_OUTER  = "rbxassetid://101658098134266"
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+local PURPLE_OUTER = Color3.fromRGB(115, 35, 225)
+local WHITE_PARTICLE = Color3.fromRGB(255, 255, 255)
+
+local state = {
+	active = false,
+	baseSize = 60,
+	globalLoop = true,
+	scaleAnimEnabled = true,
+	sparkRate = 1500,
+
+	-- ①中心 (139066505532746)
+	center = {
+		scaleBase = 1.28,
+		spinSpeed = 150,
+		loopSpin = true,
+		scaleMin = 0.4,
+		scaleMax = 1.25,
+		scaleSpeed = 2.5,
+		loopScale = true,
+		color = PURPLE_OUTER,
+		angle = 0,
+		phase = 0
+	},
+
+	-- ②中間 (127892120927253)
+	middle = {
+		scaleBase = 1.24,
+		spinSpeed = -85,
+		loopSpin = true,
+		scaleMin = 1.2,
+		scaleMax = 1.2,
+		scaleSpeed = 1.6,
+		loopScale = true,
+		color = PURPLE_OUTER,
+		angle = 0,
+		phase = math.pi * 0.66
+	},
+
+	-- ③外側 (101658098134266)
+	outer = {
+		scaleBase = 1.5,
+		spinSpeed = 85,
+		loopSpin = true,
+		scaleMin = 1.15,
+		scaleMax = 1.15,
+		scaleSpeed = 1.2,
+		loopScale = true,
+		color = PURPLE_OUTER,
+		angle = 0,
+		phase = math.pi * 1.33
+	},
+
+	savedMinZoom = player.CameraMinZoomDistance,
+	savedMaxZoom = player.CameraMaxZoomDistance
+}
+
+local circleFolder = Instance.new("Folder")
+circleFolder.Name = "RayfieldMagicCircleFolder"
+circleFolder.Parent = workspace
+
+local basePart = Instance.new("Part")
+basePart.Name = "MagicCircleBase"
+basePart.Anchored = true
+basePart.CanCollide = false
+basePart.CanQuery = false
+basePart.CanTouch = false
+basePart.Transparency = 1
+basePart.Size = Vector3.new(state.baseSize, 0.12, state.baseSize)
+basePart.Parent = circleFolder
+
+local particleAnchor = Instance.new("Part")
+particleAnchor.Name = "MagicCircleParticles"
+particleAnchor.Anchored = true
+particleAnchor.CanCollide = false
+particleAnchor.CanQuery = false
+particleAnchor.CanTouch = false
+particleAnchor.Transparency = 1
+particleAnchor.Size = Vector3.new(state.baseSize, 0.5, state.baseSize)
+particleAnchor.Parent = circleFolder
+
+local sparkEmitter = Instance.new("ParticleEmitter")
+sparkEmitter.Name = "MagicSparks"
+sparkEmitter.Color = ColorSequence.new(WHITE_PARTICLE)
+sparkEmitter.LightEmission = 0.95
+sparkEmitter.LightInfluence = 0
+sparkEmitter.EmissionDirection = Enum.NormalId.Top
+sparkEmitter.Size = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.5),
+	NumberSequenceKeypoint.new(0.65, 0.28),
+	NumberSequenceKeypoint.new(1, 0)
+})
+sparkEmitter.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.08),
+	NumberSequenceKeypoint.new(0.75, 0.45),
+	NumberSequenceKeypoint.new(1, 1)
+})
+sparkEmitter.Lifetime = NumberRange.new(1.8, 3.4)
+sparkEmitter.Rate = state.sparkRate
+sparkEmitter.Speed = NumberRange.new(4.5, 9.5)
+sparkEmitter.Acceleration = Vector3.new(0, 2.5, 0)
+sparkEmitter.SpreadAngle = Vector2.new(35, 35)
+sparkEmitter.RotSpeed = NumberRange.new(-100, 100)
+sparkEmitter.Enabled = false
+sparkEmitter.Parent = particleAnchor
+
+local function updateParticleWidth()
+	local span = state.baseSize * 1.15
+	particleAnchor.Size = Vector3.new(span, 0.5, span)
+end
+
+local function createLayerImage(parent, name, imageId, scale, color, zIndex)
+	local img = Instance.new("ImageLabel")
+	img.Name = name
+	img.Image = imageId
+	img.ImageColor3 = color
+	img.Size = UDim2.fromScale(scale, scale)
+	img.Position = UDim2.fromScale(0.5, 0.5)
+	img.AnchorPoint = Vector2.new(0.5, 0.5)
+	img.BackgroundTransparency = 1
+	img.BorderSizePixel = 0
+	img.ImageTransparency = 0
+	img.ScaleType = Enum.ScaleType.Fit
+	img.ZIndex = zIndex
+	img.Parent = parent
+	return img
+end
+
+local function createLayeredMagicGui(face)
+	local sg = Instance.new("SurfaceGui")
+	sg.Name = "RayfieldMagicSurface_" .. face.Name
+	sg.Face = face
+	sg.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	sg.PixelsPerStud = 128
+	sg.LightInfluence = 0
+	sg.AlwaysOnTop = false
+	sg.Adornee = basePart
+	sg.Parent = basePart
+
+	local container = Instance.new("Frame")
+	container.Name = "Container"
+	container.Size = UDim2.fromScale(1, 1)
+	container.Position = UDim2.fromScale(0.5, 0.5)
+	container.AnchorPoint = Vector2.new(0.5, 0.5)
+	container.BackgroundTransparency = 1
+	container.Parent = sg
+
+	local outerImg = createLayerImage(container, "OuterLayer", ASSET_OUTER, state.outer.scaleBase, PURPLE_OUTER, 1)
+	local middleImg = createLayerImage(container, "MiddleLayer", ASSET_MIDDLE, state.middle.scaleBase, PURPLE_OUTER, 2)
+	local centerImg = createLayerImage(container, "CenterLayer", ASSET_CENTER, state.center.scaleBase, PURPLE_OUTER, 3)
+
+	return {
+		outerImg = outerImg,
+		middleImg = middleImg,
+		centerImg = centerImg
+	}
+end
+
+local topGui = createLayeredMagicGui(Enum.NormalId.Top)
+local bottomGui = createLayeredMagicGui(Enum.NormalId.Bottom)
+updateParticleWidth()
+
+local function enforceThirdPersonCamera()
+	local currentCam = workspace.CurrentCamera
+	if not currentCam then
+		return
+	end
+	local maxMult = math.max(state.center.scaleMax, state.middle.scaleMax, state.outer.scaleMax)
+	local desiredDistance = math.clamp(state.baseSize * maxMult * 1.1 + 10, 14, 140)
+	player.CameraMode = Enum.CameraMode.Classic
+	player.CameraMinZoomDistance = math.max(9, desiredDistance * 0.6)
+	player.CameraMaxZoomDistance = math.max(desiredDistance + 20, 65)
+	currentCam.CameraType = Enum.CameraType.Custom
+
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if rootPart then
+		local camOffset = currentCam.CFrame.Position - rootPart.Position
+		if camOffset.Magnitude < 6 then
+			local backDir = -rootPart.CFrame.LookVector
+			local targetPos = rootPart.Position + backDir * desiredDistance + Vector3.new(0, desiredDistance * 0.45, 0)
+			currentCam.CFrame = CFrame.lookAt(targetPos, rootPart.Position + Vector3.new(0, 1.5, 0))
+		end
+	end
+end
+
+local function restoreCameraSettings()
+	player.CameraMinZoomDistance = state.savedMinZoom
+	player.CameraMaxZoomDistance = state.savedMaxZoom
+end
+
+local function getFootPositionCFrame()
+	local character = player.Character
+	if not character then
+		return nil
+	end
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not rootPart then
+		return nil
+	end
+	local hipOffset = 3
+	if humanoid and humanoid.HipHeight > 0 then
+		hipOffset = humanoid.HipHeight + 1.85
+	end
+	local footPos = rootPart.Position - Vector3.new(0, hipOffset, 0)
+	return CFrame.new(footPos)
+end
+
+local function updateSingleLayer(layerState, imgTop, imgBot, dt)
+	local shouldLoopSpin = state.globalLoop and layerState.loopSpin
+	if shouldLoopSpin then
+		layerState.angle = (layerState.angle + layerState.spinSpeed * dt) % 360
+	else
+		layerState.angle = layerState.angle + layerState.spinSpeed * dt
+	end
+
+	local mult = 1
+	if state.scaleAnimEnabled then
+		local shouldLoopScale = state.globalLoop and layerState.loopScale
+		if shouldLoopScale then
+			layerState.phase = (layerState.phase + dt * layerState.scaleSpeed) % (math.pi * 2)
+		else
+			layerState.phase = layerState.phase + dt * layerState.scaleSpeed
+		end
+		local wave = (math.sin(layerState.phase - math.pi * 0.5) + 1) * 0.5
+		mult = layerState.scaleMin + (layerState.scaleMax - layerState.scaleMin) * wave
+	end
+
+	local finalScale = layerState.scaleBase * mult
+	imgTop.Rotation = layerState.angle
+	imgTop.Size = UDim2.fromScale(finalScale, finalScale)
+	imgTop.ImageColor3 = PURPLE_OUTER
+
+	imgBot.Rotation = layerState.angle
+	imgBot.Size = UDim2.fromScale(finalScale, finalScale)
+	imgBot.ImageColor3 = PURPLE_OUTER
+end
+
+local function animateMagic(dt)
+	basePart.Size = Vector3.new(state.baseSize, 0.12, state.baseSize)
+	updateParticleWidth()
+
+	updateSingleLayer(state.center, topGui.centerImg, bottomGui.centerImg, dt)
+	updateSingleLayer(state.middle, topGui.middleImg, bottomGui.middleImg, dt)
+	updateSingleLayer(state.outer, topGui.outerImg, bottomGui.outerImg, dt)
+end
+
+local window = Rayfield:CreateWindow({
+	Name = "3層魔法陣コントローラー (Mobile)",
+	Icon = 0,
+	LoadingTitle = "魔法陣スクリプト起動中...",
+	LoadingSubtitle = "基本サイズ60・ふわふわ初期1500対応",
+	Theme = "Default",
+	DisableRayfieldPrompts = true,
+	DisableBuildWarnings = true,
+	ConfigurationSaving = {
+		Enabled = false
+	},
+	KeySystem = false
+})
+
+local mainTab = window:CreateTab("再生・サイズ・浮遊", 4483362458)
+
+mainTab:CreateSection("再生操作 (設定は固定済み)")
+
+mainTab:CreateToggle({
+	Name = "魔法陣を再生 (3人称視点)",
+	CurrentValue = false,
+	Flag = "MagicCircleActiveToggle",
+	Callback = function(Value)
+		state.active = Value
+		if state.active then
+			sparkEmitter.Rate = state.sparkRate
+			sparkEmitter.Enabled = true
+			enforceThirdPersonCamera()
+			Notify("魔法陣", "三人称視点で魔法陣を再生しました", 3)
+		else
+			sparkEmitter.Enabled = false
+			restoreCameraSettings()
+			basePart.CFrame = CFrame.new(0, -500, 0)
+			particleAnchor.CFrame = CFrame.new(0, -500, 0)
+			Notify("魔法陣", "魔法陣を停止しました", 3)
+		end
+	end
+})
+
+mainTab:CreateSection("基本的な大きさ・ふわふわ白色の調節")
+
+mainTab:CreateSlider({
+	Name = "基本サイズ (魔法陣の幅)",
+	Range = {6, 120},
+	Increment = 1,
+	Suffix = " stud",
+	CurrentValue = state.baseSize,
+	Flag = "BaseSizeSlider",
+	Callback = function(Value)
+		state.baseSize = Value
+		basePart.Size = Vector3.new(state.baseSize, 0.12, state.baseSize)
+		updateParticleWidth()
+		if state.active then
+			enforceThirdPersonCamera()
+		end
+	end
+})
+
+mainTab:CreateSlider({
+	Name = "ふわふわ白色の数",
+	Range = {0, 3000},
+	Increment = 25,
+	Suffix = " /s",
+	CurrentValue = state.sparkRate,
+	Flag = "WhiteSparkRateSlider",
+	Callback = function(Value)
+		state.sparkRate = Value
+		sparkEmitter.Rate = Value
+		sparkEmitter.Color = ColorSequence.new(WHITE_PARTICLE)
+	end
+})
+
+mainTab:CreateSection("削除")
+
+mainTab:CreateButton({
+	Name = "魔法陣とGUIを削除",
+	Callback = function()
+		if env.MagicCircleCleanup then
+			env.MagicCircleCleanup()
+		end
+		Notify("魔法陣", "魔法陣とUIを削除しました", 3)
+	end
+})
+
+local renderConn
+renderConn = RunService.RenderStepped:Connect(function(dt)
+	if not state.active then
+		basePart.CFrame = CFrame.new(0, -500, 0)
+		particleAnchor.CFrame = CFrame.new(0, -500, 0)
+		return
+	end
+
+	enforceThirdPersonCamera()
+
+	local footCf = getFootPositionCFrame()
+	if footCf then
+		basePart.CFrame = footCf
+		particleAnchor.CFrame = footCf + Vector3.new(0, 0.65, 0)
+		animateMagic(dt)
+	else
+		basePart.CFrame = CFrame.new(0, -500, 0)
+		particleAnchor.CFrame = CFrame.new(0, -500, 0)
+	end
+end)
+
+local function cleanup()
+	state.active = false
+	restoreCameraSettings()
+	if renderConn then
+		renderConn:Disconnect()
+		renderConn = nil
+	end
+	if circleFolder then
+		circleFolder:Destroy()
+	end
+	pcall(function()
+		Rayfield:Destroy()
+	end)
+end
+
+env.MagicCircleCleanup = cleanup
+
+Notify("魔法陣スクリプト", "基本サイズ60・ふわふわ1500版を読み込みました", 3)
