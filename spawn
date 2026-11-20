@@ -41,7 +41,7 @@ local finalImage = GetImageFromDecal(assetId)
 -- 回転処理
 local rotatingImages = {}
 RunService.RenderStepped:Connect(function()
-    local t = tick() * 100
+    local t = tick() * 25
     for _, img in pairs(rotatingImages) do
         if img.Parent then
             img.Rotation = t % 360
